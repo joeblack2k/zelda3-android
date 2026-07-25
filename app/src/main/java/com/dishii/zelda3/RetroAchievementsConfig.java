@@ -139,15 +139,20 @@ final class RetroAchievementsConfig {
     }
 
     Credentials resolveCredentials(String privateUsername, String privateToken) {
+        return resolveCredentials(privateUsername, privateToken, true);
+    }
+
+    Credentials resolveCredentials(String privateUsername, String privateToken,
+            boolean allowExternalCredentials) {
         String storedUsername = nonEmpty(privateUsername);
         String storedToken = nonEmpty(privateToken);
-        if (username != null && token != null) {
+        if (allowExternalCredentials && username != null && token != null) {
             return new Credentials(username, token, true, false);
         }
         if (storedUsername != null && storedToken != null) {
             return new Credentials(storedUsername, storedToken, true, false);
         }
-        if (username != null && password != null) {
+        if (allowExternalCredentials && username != null && password != null) {
             return new Credentials(username, password, false, true);
         }
         return null;

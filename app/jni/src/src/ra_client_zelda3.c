@@ -63,7 +63,7 @@ static uint32_t g_reconnect_count;
 static uint32_t g_event_counts[kRaEventTypeCount];
 static uint32_t g_frame_count;
 static uint32_t g_last_event_type;
-static char g_last_event[256];
+static char g_last_event[2048];
 static char g_user_agent[384];
 static uint8_t g_pending_progress[RA_STATE_MAX_PROGRESS];
 static size_t g_pending_progress_size;
@@ -195,30 +195,48 @@ static void RaClientZelda3_PersistToken(const rc_client_user_t *user) {
 }
 #endif
 
-static void RaClientZelda3_CopyEventText(char *destination, size_t destination_size,
-                                         const char *source) {
+typedef struct RaClientZelda3UiWriter {
+  char *buffer;
+  size_t size;
+  size_t offset;
+} RaClientZelda3UiWriter;
+
+static int RaClientZelda3_AppendUiChar(RaClientZelda3UiWriter *writer, char value) {
+  if (!writer || writer->offset + 1 >= writer->size)
+    return 0;
+  writer->buffer[writer->offset++] = value;
+  writer->buffer[writer->offset] = '\0';
+  return 1;
+}
+
+static int RaClientZelda3_AppendUiText(RaClientZelda3UiWriter *writer,
+                                       const char *text) {
   size_t i;
 
-  if (!destination || destination_size == 0)
-    return;
-  if (!source) {
-    destination[0] = '\0';
-    return;
+  if (!text)
+    return 1;
+  for (i = 0; text[i]; ++i) {
+    unsigned char value = (unsigned char)text[i];
+    if (!RaClientZelda3_AppendUiChar(writer,
+        value < 0x20 || value == '\t' ? ' ' : (char)value))
+      return 0;
   }
-  SDL_strlcpy(destination, source, destination_size);
-  for (i = 0; destination[i]; ++i) {
-    if ((unsigned char)destination[i] < 0x20)
-      destination[i] = ' ';
-  }
+  return 1;
+}
+
+static int RaClientZelda3_AppendUiUnsigned(RaClientZelda3UiWriter *writer,
+                                           uint32_t value) {
+  char number[16];
+
+  SDL_snprintf(number, sizeof(number), "%u", value);
+  return RaClientZelda3_AppendUiText(writer, number);
 }
 
 static void RaClientZelda3_SetLastEvent(const rc_client_event_t *event) {
   const char *title = NULL;
   const char *description = NULL;
   const char *value = NULL;
-  char title_copy[80];
-  char description_copy[96];
-  char value_copy[32];
+  RaClientZelda3UiWriter writer = { g_last_event, sizeof(g_last_event), 0 };
 
   if (event->achievement) {
     title = event->achievement->title;
@@ -236,12 +254,13 @@ static void RaClientZelda3_SetLastEvent(const rc_client_event_t *event) {
   } else if (event->subset) {
     title = event->subset->title;
   }
-  RaClientZelda3_CopyEventText(title_copy, sizeof(title_copy), title);
-  RaClientZelda3_CopyEventText(description_copy, sizeof(description_copy),
-                               description);
-  RaClientZelda3_CopyEventText(value_copy, sizeof(value_copy), value);
-  SDL_snprintf(g_last_event, sizeof(g_last_event), "%u:%s:%s:%s", event->type,
-               title_copy, description_copy, value_copy);
+  RaClientZelda3_AppendUiUnsigned(&writer, event->type);
+  RaClientZelda3_AppendUiChar(&writer, ':');
+  RaClientZelda3_AppendUiText(&writer, title);
+  RaClientZelda3_AppendUiChar(&writer, ':');
+  RaClientZelda3_AppendUiText(&writer, description);
+  RaClientZelda3_AppendUiChar(&writer, ':');
+  RaClientZelda3_AppendUiText(&writer, value);
   g_ui_dirty = 1;
 }
 
@@ -378,11 +397,14 @@ static void RaClientZelda3_ResetRuntimeState(void) {
   g_last_event[0] = '\0';
   SDL_memset(g_event_counts, 0, sizeof(g_event_counts));
   g_user_agent[0] = '\0';
+  g_ui_dirty = 1;
+  g_ui_last_refresh_frame = 0;
+}
+
+static void RaClientZelda3_ClearPendingProgress(void) {
   g_pending_progress_size = 0;
   g_pending_progress_valid = 0;
   g_pending_progress_reset = 0;
-  g_ui_dirty = 1;
-  g_ui_last_refresh_frame = 0;
 }
 
 static void RaClientZelda3_InitializeClient(void) {
@@ -416,46 +438,13 @@ static void RaClientZelda3_InitializeClient(void) {
   SDL_memset(g_config.secret, 0, sizeof(g_config.secret));
 }
 
-static void RaClientZelda3_CopyUiText(char *destination, size_t destination_size,
-                                      const char *source) {
-  size_t i;
-
-  if (!destination || destination_size == 0)
-    return;
-  if (!source) {
-    destination[0] = '\0';
-    return;
-  }
-  for (i = 0; i + 1 < destination_size && source[i]; ++i) {
-    unsigned char value = (unsigned char)source[i];
-    destination[i] = value < 0x20 || value == '\t' ? ' ' : (char)value;
-  }
-  destination[i] = '\0';
-}
-
-static int RaClientZelda3_AppendUiRecord(char *model, size_t model_size,
-                                         size_t *offset, const char *record) {
-  size_t record_size = SDL_strlen(record);
-
-  if (!offset || *offset + record_size >= model_size)
-    return 0;
-  SDL_memcpy(model + *offset, record, record_size);
-  *offset += record_size;
-  model[*offset] = '\0';
-  return 1;
-}
-
 static void RaClientZelda3_UpdateUiModel(void) {
   const rc_client_user_t *user = NULL;
   const rc_client_game_t *game = NULL;
   rc_client_user_game_summary_t summary = {0};
   rc_client_achievement_list_t *list = NULL;
-  char username[128];
-  char game_title[160];
-  char rich_presence[160] = "";
-  char last_event[256];
-  char record[640];
-  size_t offset = 0;
+  char rich_presence[2048] = "";
+  RaClientZelda3UiWriter writer = { g_ui_build, sizeof(g_ui_build), 0 };
   uint32_t i;
   int disconnected = 0;
   const char *mode = "disabled";
@@ -476,33 +465,42 @@ static void RaClientZelda3_UpdateUiModel(void) {
   else
     status = "connecting";
 
-  username[0] = '\0';
-  game_title[0] = '\0';
-  RaClientZelda3_CopyUiText(last_event, sizeof(last_event), g_last_event);
   if (g_client) {
     user = rc_client_get_user_info(g_client);
     game = rc_client_get_game_info(g_client);
     rc_client_get_user_game_summary(g_client, &summary);
     disconnected = g_disconnected;
-    if (user)
-      RaClientZelda3_CopyUiText(username, sizeof(username),
-                                user->display_name ? user->display_name :
-                                user->username);
-    if (game)
-      RaClientZelda3_CopyUiText(game_title, sizeof(game_title), game->title);
     if (rc_client_has_rich_presence(g_client)) {
-      char value[160];
+      char value[2048];
       rc_client_get_rich_presence_message(g_client, value, sizeof(value));
-      RaClientZelda3_CopyUiText(rich_presence, sizeof(rich_presence), value);
+      SDL_strlcpy(rich_presence, value, sizeof(rich_presence));
     }
   }
-  SDL_snprintf(record, sizeof(record),
-               "V\t1\nM\t%s\t%s\t%s\t%s\t%u\t%u\t%u\t%u\t%u\t%s\t%s\t%d\t0\t%d\n",
-               mode, status, username, game_title, game ? game->id : 0,
-               summary.num_unlocked_achievements, summary.num_core_achievements,
-               summary.points_unlocked, user ? user->score : 0, rich_presence,
-               last_event, disconnected, g_config.spectator);
-  RaClientZelda3_AppendUiRecord(g_ui_build, sizeof(g_ui_build), &offset, record);
+#define RA_UI_FIELD(text) \
+  do { if (!RaClientZelda3_AppendUiText(&writer, text) || \
+           !RaClientZelda3_AppendUiChar(&writer, '\t')) goto done; } while (0)
+#define RA_UI_NUMBER(value) \
+  do { if (!RaClientZelda3_AppendUiUnsigned(&writer, value) || \
+           !RaClientZelda3_AppendUiChar(&writer, '\t')) goto done; } while (0)
+  RA_UI_FIELD("V");
+  if (!RaClientZelda3_AppendUiUnsigned(&writer, 1) ||
+      !RaClientZelda3_AppendUiChar(&writer, '\n') ||
+      !RaClientZelda3_AppendUiText(&writer, "M\t")) goto done;
+  RA_UI_FIELD(mode);
+  RA_UI_FIELD(status);
+  RA_UI_FIELD(user ? (user->display_name ? user->display_name : user->username) : NULL);
+  RA_UI_FIELD(game ? game->title : NULL);
+  RA_UI_NUMBER(game ? game->id : 0);
+  RA_UI_NUMBER(summary.num_unlocked_achievements);
+  RA_UI_NUMBER(summary.num_core_achievements);
+  RA_UI_NUMBER(summary.points_unlocked);
+  RA_UI_NUMBER(user ? user->score : 0);
+  RA_UI_FIELD(rich_presence);
+  RA_UI_FIELD(g_last_event);
+  RA_UI_NUMBER(disconnected);
+  RA_UI_NUMBER(0);
+  if (!RaClientZelda3_AppendUiUnsigned(&writer, g_config.spectator) ||
+      !RaClientZelda3_AppendUiChar(&writer, '\n')) goto done;
 
   if (g_client && g_game_valid) {
     list = rc_client_create_achievement_list(
@@ -513,32 +511,23 @@ static void RaClientZelda3_UpdateUiModel(void) {
     for (i = 0; i < list->num_buckets; ++i) {
       const rc_client_achievement_bucket_t *bucket = &list->buckets[i];
       uint32_t j;
-      char bucket_label[96];
-
-      RaClientZelda3_CopyUiText(bucket_label, sizeof(bucket_label), bucket->label);
       for (j = 0; j < bucket->num_achievements; ++j) {
         const rc_client_achievement_t *achievement = bucket->achievements[j];
-        char title[144];
-        char description[240];
-        char progress[32];
-
-        RaClientZelda3_CopyUiText(title, sizeof(title), achievement->title);
-        RaClientZelda3_CopyUiText(description, sizeof(description),
-                                  achievement->description);
-        RaClientZelda3_CopyUiText(progress, sizeof(progress),
-                                  achievement->measured_progress);
-        SDL_snprintf(record, sizeof(record), "A\t%s\t%u\t%s\t%s\t%u\t%d\t%s\n",
-                     bucket_label, achievement->id, title, description,
-                     achievement->points,
-                     achievement->state == RC_CLIENT_ACHIEVEMENT_STATE_UNLOCKED,
-                     progress);
-        if (!RaClientZelda3_AppendUiRecord(g_ui_build, sizeof(g_ui_build),
-                                           &offset, record))
-          goto done;
+        if (!RaClientZelda3_AppendUiText(&writer, "A\t")) goto done;
+        RA_UI_FIELD(bucket->label);
+        RA_UI_NUMBER(achievement->id);
+        RA_UI_FIELD(achievement->title);
+        RA_UI_FIELD(achievement->description);
+        RA_UI_NUMBER(achievement->points);
+        RA_UI_NUMBER(achievement->state == RC_CLIENT_ACHIEVEMENT_STATE_UNLOCKED);
+        if (!RaClientZelda3_AppendUiText(&writer, achievement->measured_progress) ||
+            !RaClientZelda3_AppendUiChar(&writer, '\n')) goto done;
       }
     }
   }
 done:
+#undef RA_UI_FIELD
+#undef RA_UI_NUMBER
   if (list)
     rc_client_destroy_achievement_list(list);
   if (RaClientZelda3_EnsureCommandMutex()) {
@@ -819,6 +808,7 @@ void RaClientZelda3_Shutdown(void) {
   RaClientZelda3_DestroyClient();
   RaClientZelda3_ClearConfig(&g_config);
   RaClientZelda3_ResetRuntimeState();
+  RaClientZelda3_ClearPendingProgress();
   if (RaClientZelda3_EnsureCommandMutex()) {
     SDL_LockMutex(g_command_mutex);
     RaClientZelda3_ClearConfig(&g_commands.config);

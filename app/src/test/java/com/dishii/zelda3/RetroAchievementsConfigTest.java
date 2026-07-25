@@ -11,6 +11,21 @@ public final class RetroAchievementsConfigTest {
         testHeaderStripAndHash();
         testConfigValidationAndCredentialPairs();
         testExternalCredentialClearIsDurable();
+        testLogoutTombstoneBlocksStaleExternalCredentials();
+    }
+
+    private static void testLogoutTombstoneBlocksStaleExternalCredentials() throws Exception {
+        File file = File.createTempFile("ra-config-", ".ini");
+        try {
+            write(file, "Enabled=true\nUsername=external\nToken=stale-token\n");
+            RetroAchievementsConfig config = RetroAchievementsConfig.load(file);
+            check(config.resolveCredentials(null, null, false) == null,
+                    "logout tombstone must block stale external credentials after cleanup failure");
+            check(config.resolveCredentials("private-user", "fresh-token", false).token,
+                    "logout tombstone must allow a newly persisted private token");
+        } finally {
+            file.delete();
+        }
     }
 
     private static void testHeaderStripAndHash() {

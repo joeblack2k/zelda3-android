@@ -4,8 +4,6 @@ import android.content.Context;
 import android.os.Build;
 import java.io.File;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 
 /** Java ownership boundary for RA configuration and private credentials. */
 final class RetroAchievementsBridge {
@@ -13,44 +11,6 @@ final class RetroAchievementsBridge {
     private static Context applicationContext;
     private static File externalConfigFile;
     private static File passwordConfigFile;
-
-    static final class Achievement {
-        final String bucket;
-        final int id;
-        final String title;
-        final String description;
-        final int points;
-        final boolean unlocked;
-        final String progress;
-
-        Achievement(String bucket, int id, String title, String description,
-                int points, boolean unlocked, String progress) {
-            this.bucket = bucket;
-            this.id = id;
-            this.title = title;
-            this.description = description;
-            this.points = points;
-            this.unlocked = unlocked;
-            this.progress = progress;
-        }
-    }
-
-    static final class UiModel {
-        String mode = "disabled";
-        String status = "disabled";
-        String username = "";
-        String gameTitle = "";
-        int gameId;
-        int unlocked;
-        int core;
-        int points;
-        int rp;
-        String richPresence = "";
-        String lastEvent = "";
-        boolean disconnected;
-        boolean spectator;
-        final List<Achievement> achievements = new ArrayList<>();
-    }
 
     private RetroAchievementsBridge() {}
 
@@ -61,7 +21,8 @@ final class RetroAchievementsBridge {
         boolean enabled = verified && config.enabled
                 && config.mode != RetroAchievementsConfig.Mode.DISABLED;
         RetroAchievementsConfig.Credentials credentials = enabled
-                ? config.resolveCredentials(storage.getUsername(), storage.getReturnedToken())
+                ? config.resolveCredentials(storage.getUsername(), storage.getReturnedToken(),
+                        !storage.isLoggedOut())
                 : null;
         nativeConfigure(enabled, config.mode == RetroAchievementsConfig.Mode.SPECTATOR, verified,
                 config.clientName, config.clientVersion,
@@ -73,7 +34,7 @@ final class RetroAchievementsBridge {
     }
 
     static void logout(Context context) {
-        new RetroAchievementsStorage(context).clearCredentials();
+        new RetroAchievementsStorage(context).logout();
         File configFile = externalConfigFile;
         if (configFile != null) {
             try {
@@ -94,38 +55,8 @@ final class RetroAchievementsBridge {
         return nativeSnapshot();
     }
 
-    static UiModel uiModel() {
-        UiModel model = new UiModel();
-        String raw = nativeUiModel();
-        if (raw == null) return model;
-        String[] lines = raw.split("\n");
-        for (String line : lines) {
-            String[] field = line.split("\t", -1);
-            try {
-                if (field.length >= 15 && "M".equals(field[0])) {
-                    model.mode = field[1];
-                    model.status = field[2];
-                    model.username = field[3];
-                    model.gameTitle = field[4];
-                    model.gameId = Integer.parseInt(field[5]);
-                    model.unlocked = Integer.parseInt(field[6]);
-                    model.core = Integer.parseInt(field[7]);
-                    model.points = Integer.parseInt(field[8]);
-                    model.rp = Integer.parseInt(field[9]);
-                    model.richPresence = field[10];
-                    model.lastEvent = field[11];
-                    model.disconnected = "1".equals(field[12]);
-                    model.spectator = "1".equals(field[14]);
-                } else if (field.length >= 8 && "A".equals(field[0])) {
-                    model.achievements.add(new Achievement(field[1], Integer.parseInt(field[2]),
-                            field[3], field[4], Integer.parseInt(field[5]),
-                            "1".equals(field[6]), field[7]));
-                }
-            } catch (NumberFormatException ignored) {
-                // Cached native UI data is best-effort; keep the usable records.
-            }
-        }
-        return model;
+    static RetroAchievementsUiModel uiModel() {
+        return RetroAchievementsUiModel.parse(nativeUiModel());
     }
 
     static void persistReturnedToken(String username, String token) {

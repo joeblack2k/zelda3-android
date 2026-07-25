@@ -10,6 +10,7 @@ final class RetroAchievementsStorage {
     private static final String VERIFIED_ROM_MD5 = "verified_rom_md5";
     private static final String USERNAME = "username";
     private static final String TOKEN = "token";
+    private static final String LOGGED_OUT = "logged_out";
 
     private final SharedPreferences preferences;
 
@@ -42,10 +43,15 @@ final class RetroAchievementsStorage {
     }
 
     boolean saveCredentials(String username, String token) {
-        return preferences.edit().putString(USERNAME, username).putString(TOKEN, token).commit();
+        return preferences.edit().putString(USERNAME, username).putString(TOKEN, token)
+                .remove(LOGGED_OUT).commit();
     }
 
-    boolean clearCredentials() {
-        return preferences.edit().remove(USERNAME).remove(TOKEN).commit();
+    boolean logout() {
+        return preferences.edit().remove(USERNAME).remove(TOKEN).putBoolean(LOGGED_OUT, true).commit();
+    }
+
+    boolean isLoggedOut() {
+        return preferences.getBoolean(LOGGED_OUT, false);
     }
 }

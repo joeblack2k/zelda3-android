@@ -40,6 +40,8 @@ public class SetupActivity extends Activity {
     private static final int REQUEST_PICK_ROM = 1001;
     public static final String ACTION_VERIFY_RETROACHIEVEMENTS =
             "com.dishii.zelda3.action.VERIFY_RETROACHIEVEMENTS";
+    static final String EXTRA_REFRESH_RETROACHIEVEMENTS =
+            "com.dishii.zelda3.extra.REFRESH_RETROACHIEVEMENTS";
 
     private final Handler main = new Handler(Looper.getMainLooper());
 
@@ -117,6 +119,9 @@ public class SetupActivity extends Activity {
 
     private void launchGame() {
         Intent intent = new Intent(this, MainActivity.class);
+        if (verificationOnly) {
+            intent.putExtra(EXTRA_REFRESH_RETROACHIEVEMENTS, true);
+        }
         int display = swapDisplayId();
         if (display != -1 && Build.VERSION.SDK_INT >= 26) {
             android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();

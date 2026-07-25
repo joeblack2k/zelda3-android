@@ -27,10 +27,23 @@ grep -q 'rc_client_idle(g_client);' "$client"
 grep -q 'rc_client_progress_size(g_client)' "$client"
 grep -q 'rc_client_create_achievement_list' "$client"
 grep -q 'RaStateLoadFooter(rwops);' "$rtl"
+grep -q 'static void RaClientZelda3_ClearPendingProgress' "$client"
+awk '
+  /static void RaClientZelda3_ResetRuntimeState\(void\)/ { inside = 1; next }
+  inside && /^}/ { exit bad }
+  inside && /g_pending_progress/ { bad = 1 }
+  END { exit bad }
+' "$client"
+grep -q 'RaClientZelda3_ApplyPendingProgress();' "$client"
+grep -q 'RaClientZelda3_ClearPendingProgress();' "$client"
+grep -q 'EXTRA_REFRESH_RETROACHIEVEMENTS' "$root/app/src/main/java/com/dishii/zelda3/SetupActivity.java"
+grep -q 'protected void onNewIntent(Intent intent)' "$root/app/src/main/java/com/dishii/zelda3/MainActivity.java"
+grep -q 'RECEIVER_EXPORTED' "$root/app/src/main/java/com/dishii/zelda3/MainActivity.java"
+grep -q 'x >= raListLeft && x <= raListRight' "$root/app/src/main/java/com/dishii/zelda3/MinimapView.java"
 
 tmp=${TMPDIR:-/tmp}/zelda3-ra-state-$$
 trap 'rm -f "$tmp"' EXIT
 cc -std=c99 -Wall -Werror -I"$root/app/jni/src/src" "$state_test" "$state" -o "$tmp"
 "$tmp"
 
-printf '%s\n' 'RA native static assertions passed: 6'
+printf '%s\n' 'RA native static assertions passed: 12'

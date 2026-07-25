@@ -23,7 +23,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -161,7 +163,8 @@ public class MinimapView extends View {
     private boolean raTouch, raScrolling;
     private float raTouchStartY, raTouchLastY;
     private long raModelAt;
-    private RetroAchievementsBridge.UiModel raModel;
+    private RetroAchievementsUiModel raModel;
+    private float raListLeft, raListRight;
     private int remapArm = -1;          // command index waiting for a button press
     private long remapArmAt;
     private final int[] padControls = new int[12];
@@ -1163,14 +1166,12 @@ public class MinimapView extends View {
             try {
                 raModel = RetroAchievementsBridge.uiModel();
             } catch (UnsatisfiedLinkError ignored) {
-                raModel = new RetroAchievementsBridge.UiModel();
+                raModel = new RetroAchievementsUiModel();
                 raModel.status = "error";
             }
             raModelAt = now;
         }
-        RetroAchievementsBridge.UiModel model = raModel;
-        drawText(c, "RETROACHIEVEMENTS",
-                r.centerX() - textWidth("RETROACHIEVEMENTS", 3 * u) / 2, r.top + 18 * u, 3 * u);
+        RetroAchievementsUiModel model = raModel;
         raBackR.set(r.left + 18 * u, r.top + 12 * u, r.left + 112 * u, r.top + 50 * u);
         drawRaAction(c, raBackR, "BACK", false);
         raLogoutR.set(r.right - 150 * u, r.top + 12 * u, r.right - 18 * u, r.top + 50 * u);
@@ -1178,71 +1179,81 @@ public class MinimapView extends View {
         raVerifyR.set(r.right - 292 * u, r.top + 12 * u, r.right - 158 * u, r.top + 50 * u);
         if ("unverified".equals(model.status)) drawRaAction(c, raVerifyR, "VERIFY ROM", true);
         else raVerifyR.setEmpty();
+        drawText(c, "RETROACHIEVEMENTS",
+                r.centerX() - textWidth("RETROACHIEVEMENTS", 3 * u) / 2, r.top + 60 * u, 3 * u);
 
         String mode = model.mode.toUpperCase();
         String status = raStatus(model);
         drawText(c, fitText(mode + "  " + status, r.width() - 260 * u, 2.2f * u),
-                r.left + 24 * u, r.top + 70 * u, 2.2f * u);
+                r.left + 24 * u, r.top + 94 * u, 2.2f * u);
         String game = model.gameTitle.length() == 0 ? "NO VERIFIED GAME" :
                 model.gameTitle + "  #" + model.gameId;
         drawText(c, fitText(game, r.width() - 48 * u, 2.6f * u),
-                r.left + 24 * u, r.top + 106 * u, 2.6f * u);
+                r.left + 24 * u, r.top + 126 * u, 2.6f * u);
         String user = model.username.length() == 0 ? "USER: --" : "USER: " + model.username;
         String summary = user + "    " + model.unlocked + "/" + model.core + " CORE    RP " + model.rp;
         drawText(c, fitText(summary, r.width() - 48 * u, 2.1f * u),
-                r.left + 24 * u, r.top + 138 * u, 2.1f * u);
+                r.left + 24 * u, r.top + 158 * u, 2.1f * u);
         String presence = model.richPresence.length() == 0 ? "RICH PRESENCE: --" :
                 "RICH PRESENCE: " + model.richPresence;
         drawText(c, fitText(presence, r.width() - 48 * u, 1.9f * u),
-                r.left + 24 * u, r.top + 168 * u, 1.9f * u);
+                r.left + 24 * u, r.top + 188 * u, 1.9f * u);
         String event = model.lastEvent.length() == 0 ? "LAST EVENT: --" :
                 "LAST EVENT: " + model.lastEvent;
         drawText(c, fitText(event, r.width() - 48 * u, 1.9f * u),
-                r.left + 24 * u, r.top + 195 * u, 1.9f * u);
+                r.left + 24 * u, r.top + 215 * u, 1.9f * u);
 
-        raListTop = r.top + 224 * u;
+        raListTop = r.top + 244 * u;
         raListBot = r.bottom - 14 * u;
+        raListLeft = r.left + 14 * u;
+        raListRight = r.right - 14 * u;
         float contentH = 0;
         String previousBucket = null;
-        for (RetroAchievementsBridge.Achievement achievement : model.achievements) {
+        for (RetroAchievementsUiModel.Achievement achievement : model.achievements) {
             if (!achievement.bucket.equals(previousBucket)) {
                 contentH += 28 * u;
                 previousBucket = achievement.bucket;
             }
-            contentH += 72 * u;
+            contentH += raAchievementHeight(achievement, r);
         }
         raMaxScroll = Math.max(0, contentH - (raListBot - raListTop));
         raScroll = clamp(raScroll, 0, raMaxScroll);
         c.save();
-        c.clipRect(r.left + 14 * u, raListTop, r.right - 14 * u, raListBot);
+        c.clipRect(raListLeft, raListTop, raListRight, raListBot);
         float y = raListTop - raScroll;
         previousBucket = null;
-        for (RetroAchievementsBridge.Achievement achievement : model.achievements) {
+        for (RetroAchievementsUiModel.Achievement achievement : model.achievements) {
             if (!achievement.bucket.equals(previousBucket)) {
                 drawText(c, fitText(achievement.bucket.toUpperCase(), r.width() - 48 * u, 1.9f * u),
                         r.left + 24 * u, y + 2 * u, 1.9f * u);
                 y += 28 * u;
                 previousBucket = achievement.bucket;
             }
-            if (y + 72 * u >= raListTop && y <= raListBot) {
+            float height = raAchievementHeight(achievement, r);
+            if (y + height >= raListTop && y <= raListBot) {
                 stroke.setStrokeWidth(2 * u);
                 stroke.setColor(COL_GOLD_DARK);
-                c.drawLine(r.left + 24 * u, y + 68 * u, r.right - 24 * u, y + 68 * u, stroke);
+                c.drawLine(r.left + 24 * u, y + height - 4 * u, r.right - 24 * u, y + height - 4 * u, stroke);
                 String state = achievement.unlocked ? "DONE" : "OPEN";
-                String title = fitText(achievement.title, r.width() - 220 * u, 2.1f * u);
-                drawText(c, title, r.left + 24 * u, y + 4 * u, 2.1f * u);
                 String points = state + "  " + achievement.points + "P";
                 drawText(c, points, r.right - 24 * u - textWidth(points, 1.8f * u),
                         y + 6 * u, 1.8f * u);
-                drawText(c, fitText(achievement.description, r.width() - 48 * u, 1.7f * u),
-                        r.left + 24 * u, y + 31 * u, 1.7f * u);
+                float textY = y + 4 * u;
+                for (String title : wrapRaText(achievement.title, r.width() - 220 * u, 2.1f * u, 2)) {
+                    drawText(c, title, r.left + 24 * u, textY, 2.1f * u);
+                    textY += 20 * u;
+                }
+                for (String description : wrapRaText(achievement.description, r.width() - 48 * u, 1.7f * u, 2)) {
+                    drawText(c, description, r.left + 24 * u, textY, 1.7f * u);
+                    textY += 18 * u;
+                }
                 if (achievement.progress.length() > 0) {
                     String progress = "PROGRESS: " + achievement.progress;
                     drawText(c, fitText(progress, r.width() - 48 * u, 1.6f * u),
-                            r.left + 24 * u, y + 52 * u, 1.6f * u);
+                            r.left + 24 * u, textY, 1.6f * u);
                 }
             }
-            y += 72 * u;
+            y += height;
         }
         c.restore();
         if (model.achievements.isEmpty()) {
@@ -1251,7 +1262,35 @@ public class MinimapView extends View {
         }
     }
 
-    private String raStatus(RetroAchievementsBridge.UiModel model) {
+    private float raAchievementHeight(RetroAchievementsUiModel.Achievement achievement, RectF r) {
+        return 12 * u + wrapRaText(achievement.title, r.width() - 220 * u, 2.1f * u, 2).size() * 20 * u
+                + wrapRaText(achievement.description, r.width() - 48 * u, 1.7f * u, 2).size() * 18 * u
+                + (achievement.progress.length() == 0 ? 0 : 18 * u);
+    }
+
+    private List<String> wrapRaText(String text, float maxWidth, float size, int maxLines) {
+        ArrayList<String> lines = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        for (String word : text.trim().split("\\s+")) {
+            String next = line.length() == 0 ? word : line + " " + word;
+            if (textWidth(next, size) <= maxWidth) {
+                line.setLength(0);
+                line.append(next);
+            } else if (line.length() == 0) {
+                lines.add(fitText(word, maxWidth, size));
+            } else {
+                lines.add(line.toString());
+                line.setLength(0);
+                line.append(word);
+            }
+            if (lines.size() == maxLines) return lines;
+        }
+        if (line.length() > 0 && lines.size() < maxLines) lines.add(line.toString());
+        if (lines.isEmpty()) lines.add("");
+        return lines;
+    }
+
+    private String raStatus(RetroAchievementsUiModel model) {
         if ("unverified".equals(model.status)) return "VERIFY THE ORIGINAL US ROM";
         if ("disabled".equals(model.status)) return "DISABLED OR NOT CONFIGURED";
         if ("disconnected".equals(model.status)) return "OFFLINE - RETRYING";
@@ -2210,7 +2249,7 @@ public class MinimapView extends View {
                     raModelAt = 0;
                     return true;
                 }
-                if (y >= raListTop && y <= raListBot) {
+                if (x >= raListLeft && x <= raListRight && y >= raListTop && y <= raListBot) {
                     raTouch = true;
                     raScrolling = false;
                     raTouchStartY = raTouchLastY = y;

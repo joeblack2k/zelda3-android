@@ -24,6 +24,8 @@ public class MainActivity extends SDLActivity {
     private static final String TAG = "Zelda3SecondScreen";
     // Context.RECEIVER_NOT_EXPORTED, unavailable as a named constant at compileSdk 31.
     private static final int RECEIVER_NOT_EXPORTED = 4;
+    // Context.RECEIVER_EXPORTED, unavailable as a named constant at compileSdk 31.
+    private static final int RECEIVER_EXPORTED = 2;
 
     private SecondScreenPresentation secondScreen;
     private DisplayManager displayManager;
@@ -31,6 +33,7 @@ public class MainActivity extends SDLActivity {
     // activity left the foreground; tells the dismiss-recovery logic not to
     // re-show it until onStart.
     private boolean secondScreenHidden;
+    private boolean debugReceiverRegistered;
 
     private final DisplayManager.DisplayListener displayListener =
             new DisplayManager.DisplayListener() {
@@ -57,25 +60,6 @@ public class MainActivity extends SDLActivity {
     private final BroadcastReceiver dumpReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if (BuildConfig.DEBUG && "com.dishii.zelda3.RA_TEST".equals(intent.getAction())) {
-                String command = intent.getStringExtra("command");
-                try {
-                    if ("save".equals(command)) {
-                        GameState.saveState();
-                    } else if ("load".equals(command)) {
-                        GameState.loadState();
-                    } else if ("dump".equals(command)) {
-                        Log.i("Zelda3RA", RetroAchievementsBridge.snapshot());
-                    }
-                } catch (UnsatisfiedLinkError ignored) {}
-                return;
-            }
-            if (BuildConfig.DEBUG && "com.dishii.zelda3.RA_DUMP".equals(intent.getAction())) {
-                try {
-                    Log.i("Zelda3RA", RetroAchievementsBridge.snapshot());
-                } catch (UnsatisfiedLinkError ignored) {}
-                return;
-            }
             if (secondScreen != null) {
                 secondScreen.dumpToFile(new File(getExternalFilesDir(null), "second_screen.png"));
             } else if (CompanionActivity.instance != null) {
@@ -85,6 +69,27 @@ public class MainActivity extends SDLActivity {
             try {
                 GameState.readSram(b);
                 Log.i(TAG, String.format("pendants=0x%02x crystals=0x%02x", b[0x74], b[0x7A]));
+            } catch (UnsatisfiedLinkError ignored) {}
+        }
+    };
+
+    private final BroadcastReceiver debugReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (!BuildConfig.DEBUG) return;
+            try {
+                if ("com.dishii.zelda3.RA_TEST".equals(intent.getAction())) {
+                    String command = intent.getStringExtra("command");
+                    if ("save".equals(command)) {
+                        GameState.saveState();
+                    } else if ("load".equals(command)) {
+                        GameState.loadState();
+                    } else if ("dump".equals(command)) {
+                        Log.i("Zelda3RA", RetroAchievementsBridge.snapshot());
+                    }
+                } else if ("com.dishii.zelda3.RA_DUMP".equals(intent.getAction())) {
+                    Log.i("Zelda3RA", RetroAchievementsBridge.snapshot());
+                }
             } catch (UnsatisfiedLinkError ignored) {}
         }
     };
@@ -103,14 +108,20 @@ public class MainActivity extends SDLActivity {
             showSecondScreenIfPresent();
 
             IntentFilter dumpFilter = new IntentFilter("com.dishii.zelda3.DUMP");
-            if (BuildConfig.DEBUG) {
-                dumpFilter.addAction("com.dishii.zelda3.RA_DUMP");
-                dumpFilter.addAction("com.dishii.zelda3.RA_TEST");
-            }
             if (Build.VERSION.SDK_INT >= 33) {
                 registerReceiver(dumpReceiver, dumpFilter, RECEIVER_NOT_EXPORTED);
             } else {
                 registerReceiver(dumpReceiver, dumpFilter);
+            }
+            if (BuildConfig.DEBUG) {
+                IntentFilter debugFilter = new IntentFilter("com.dishii.zelda3.RA_DUMP");
+                debugFilter.addAction("com.dishii.zelda3.RA_TEST");
+                if (Build.VERSION.SDK_INT >= 33) {
+                    registerReceiver(debugReceiver, debugFilter, RECEIVER_EXPORTED);
+                } else {
+                    registerReceiver(debugReceiver, debugFilter);
+                }
+                debugReceiverRegistered = true;
             }
         } catch (Throwable e) {
             Log.e(TAG, "Second screen setup failed", e);
@@ -297,6 +308,11 @@ public class MainActivity extends SDLActivity {
         try {
             unregisterReceiver(dumpReceiver);
         } catch (IllegalArgumentException ignored) {}
+        if (debugReceiverRegistered) {
+            try {
+                unregisterReceiver(debugReceiver);
+            } catch (IllegalArgumentException ignored) {}
+        }
         dismissSecondScreen();
         if (displayManager != null) {
             displayManager.unregisterDisplayListener(displayListener);
@@ -330,6 +346,16 @@ public class MainActivity extends SDLActivity {
             RetroAchievementsBridge.configure(this, configFile, config, storage, verified);
         } catch (IOException e) {
             Log.w("Zelda3RA", "RetroAchievements config unavailable");
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (intent.getBooleanExtra(SetupActivity.EXTRA_REFRESH_RETROACHIEVEMENTS, false)) {
+            File externalDir = getExternalFilesDir(null);
+            if (externalDir != null) configureRetroAchievements(externalDir);
         }
     }
 

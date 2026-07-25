@@ -101,8 +101,10 @@ task raJvmTestClasses(type: JavaCompile) {
             'src/main/java/com/dishii/zelda3/RomVerification.java',
             'src/main/java/com/dishii/zelda3/RetroAchievementsConfig.java',
             'src/main/java/com/dishii/zelda3/RetroAchievementsHttp.java',
+            'src/main/java/com/dishii/zelda3/RetroAchievementsUiModel.java',
             'src/test/java/com/dishii/zelda3/RetroAchievementsConfigTest.java',
-            'src/test/java/com/dishii/zelda3/RetroAchievementsHttpTest.java')
+            'src/test/java/com/dishii/zelda3/RetroAchievementsHttpTest.java',
+            'src/test/java/com/dishii/zelda3/RetroAchievementsUiModelTest.java')
     destinationDirectory.set(file("$buildDir/ra-jvm-tests"))
     classpath = files()
     sourceCompatibility = '1.8'
@@ -119,9 +121,14 @@ task raHttpTest(type: JavaExec, dependsOn: raJvmTestClasses) {
     mainClass.set('com.dishii.zelda3.RetroAchievementsHttpTest')
 }
 
-task raJvmTests(dependsOn: [raConfigTest, raHttpTest]) {
+task raUiModelTest(type: JavaExec, dependsOn: raJvmTestClasses) {
+    classpath = files("$buildDir/ra-jvm-tests")
+    mainClass.set('com.dishii.zelda3.RetroAchievementsUiModelTest')
+}
+
+task raJvmTests(dependsOn: [raConfigTest, raHttpTest, raUiModelTest]) {
     doLast {
-        println 'RA JVM tests passed: 2'
+        println 'RA JVM tests passed: 3'
     }
 }
 
