@@ -57,6 +57,19 @@ public class MainActivity extends SDLActivity {
     private final BroadcastReceiver dumpReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            if (BuildConfig.DEBUG && "com.dishii.zelda3.RA_TEST".equals(intent.getAction())) {
+                String command = intent.getStringExtra("command");
+                try {
+                    if ("save".equals(command)) {
+                        GameState.saveState();
+                    } else if ("load".equals(command)) {
+                        GameState.loadState();
+                    } else if ("dump".equals(command)) {
+                        Log.i("Zelda3RA", RetroAchievementsBridge.snapshot());
+                    }
+                } catch (UnsatisfiedLinkError ignored) {}
+                return;
+            }
             if (BuildConfig.DEBUG && "com.dishii.zelda3.RA_DUMP".equals(intent.getAction())) {
                 try {
                     Log.i("Zelda3RA", RetroAchievementsBridge.snapshot());
@@ -92,6 +105,7 @@ public class MainActivity extends SDLActivity {
             IntentFilter dumpFilter = new IntentFilter("com.dishii.zelda3.DUMP");
             if (BuildConfig.DEBUG) {
                 dumpFilter.addAction("com.dishii.zelda3.RA_DUMP");
+                dumpFilter.addAction("com.dishii.zelda3.RA_TEST");
             }
             if (Build.VERSION.SDK_INT >= 33) {
                 registerReceiver(dumpReceiver, dumpFilter, RECEIVER_NOT_EXPORTED);

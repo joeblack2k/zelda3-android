@@ -15,6 +15,7 @@
 #include "assets.h"
 #include "android_logging.h"
 #include "ra_client_zelda3.h"
+#include "ra_state.h"
 /*
  * The saving functions have been rewritten in this file to support saving to external storage on android.
  */
@@ -842,6 +843,65 @@ static const char *const kReferenceSaves[] = {
   "Chapter 13 - After Ganon's Tower.sav",
 };
 
+static void RaStateLogFooter(RaStateFooterStatus status) {
+  static const char *const kStatus[] = {
+    "ok", "legacy", "truncated", "version", "size", "checksum",
+  };
+  const char *text = status <= kRaStateFooterChecksum ? kStatus[status] : "invalid";
+
+  printf("Zelda3RA: progress footer=%s\n", text);
+}
+
+static void RaStateAppendFooter(SDL_RWops *rwops) {
+  static uint8 footer[16 + RA_STATE_MAX_PROGRESS];
+  size_t payload_size;
+  size_t footer_size;
+
+  payload_size = RaStateSerialize(footer + 16, RA_STATE_MAX_PROGRESS);
+  footer_size = RaStateFooterEncode(footer, sizeof(footer), footer + 16,
+                                    payload_size);
+  if (!footer_size || SDL_RWwrite(rwops, footer, 1, footer_size) != footer_size)
+    printf("Zelda3RA: progress footer=write_failed\n");
+}
+
+static void RaStateLoadFooter(SDL_RWops *rwops) {
+  static uint8 footer[16 + RA_STATE_MAX_PROGRESS];
+  Sint64 start = SDL_RWtell(rwops);
+  Sint64 end;
+  size_t footer_size;
+  const uint8 *payload = NULL;
+  size_t payload_size = 0;
+  RaStateFooterStatus status;
+
+  if (start < 0 || (end = SDL_RWseek(rwops, 0, RW_SEEK_END)) < start ||
+      SDL_RWseek(rwops, start, RW_SEEK_SET) < 0) {
+    RaStateLogFooter(kRaStateFooterTruncated);
+    RaStateReset();
+    return;
+  }
+  if ((uint64_t)(end - start) > sizeof(footer)) {
+    RaStateLogFooter(kRaStateFooterSize);
+    RaStateReset();
+    return;
+  }
+  footer_size = (size_t)(end - start);
+  if (footer_size &&
+      SDL_RWread(rwops, footer, 1, footer_size) != footer_size) {
+    RaStateLogFooter(kRaStateFooterTruncated);
+    RaStateReset();
+    return;
+  }
+  status = RaStateFooterDecode(footer, footer_size, &payload, &payload_size);
+  if (status != kRaStateFooterOk) {
+    RaStateLogFooter(status);
+    RaStateReset();
+    return;
+  }
+  RaStateLogFooter(status);
+  if (!payload_size || !RaStateDeserialize(payload, payload_size))
+    RaStateReset();
+}
+
 /*
 void SaveLoadSlot(int cmd, int which) {
   char name[128];
@@ -887,12 +947,14 @@ void SaveLoadSlot(int cmd, int which) {
 
     if (cmd != kSaveLoad_Save)
       StateRecorder_Load(&state_recorder, rwops, cmd == kSaveLoad_Replay);
-    else
+    else {
       StateRecorder_Save(&state_recorder, rwops);
+      RaStateAppendFooter(rwops);
+    }
 
-    SDL_RWclose(rwops);
     if (cmd != kSaveLoad_Save)
-      RaClientZelda3_Reset();
+      RaStateLoadFooter(rwops);
+    SDL_RWclose(rwops);
   }
 }
 

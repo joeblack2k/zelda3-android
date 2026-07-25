@@ -2,6 +2,7 @@
 
 #include "ra_http.h"
 #include "ra_memory.h"
+#include "ra_state.h"
 
 #include <rc_consoles.h>
 
@@ -26,6 +27,7 @@ typedef struct RaClientZelda3Config {
   int enabled;
   int spectator;
   int secret_is_token;
+  int verified;
   char client_name[65];
   char client_version[33];
   char username[128];
@@ -40,6 +42,7 @@ typedef struct RaClientZelda3Commands {
   int logout_pending;
   int paused;
   char snapshot[2048];
+  char ui_model[64 * 1024];
 } RaClientZelda3Commands;
 
 static RaClientZelda3Config g_config;
@@ -62,6 +65,13 @@ static uint32_t g_frame_count;
 static uint32_t g_last_event_type;
 static char g_last_event[256];
 static char g_user_agent[384];
+static uint8_t g_pending_progress[RA_STATE_MAX_PROGRESS];
+static size_t g_pending_progress_size;
+static int g_pending_progress_valid;
+static int g_pending_progress_reset;
+static int g_ui_dirty = 1;
+static uint32_t g_ui_last_refresh_frame;
+static char g_ui_build[64 * 1024];
 
 static int RaClientZelda3_EnsureCommandMutex(void) {
   SDL_AtomicLock(&g_command_init_lock);
@@ -79,7 +89,8 @@ static void RaClientZelda3_ClearConfig(RaClientZelda3Config *config) {
 }
 
 static void RaClientZelda3_CopyConfig(RaClientZelda3Config *config, int enabled,
-                                      int spectator, const char *client_name,
+                                      int spectator, int verified,
+                                      const char *client_name,
                                       const char *client_version,
                                       const char *username, const char *secret,
                                       int secret_is_token,
@@ -88,6 +99,7 @@ static void RaClientZelda3_CopyConfig(RaClientZelda3Config *config, int enabled,
   SDL_memset(config, 0, sizeof(*config));
   config->enabled = enabled && username && username[0] && secret && secret[0];
   config->spectator = spectator != 0;
+  config->verified = verified != 0;
   config->secret_is_token = secret_is_token != 0;
   SDL_strlcpy(config->client_name,
               client_name && client_name[0] ? client_name : "Zelda3AndroidRA",
@@ -230,6 +242,31 @@ static void RaClientZelda3_SetLastEvent(const rc_client_event_t *event) {
   RaClientZelda3_CopyEventText(value_copy, sizeof(value_copy), value);
   SDL_snprintf(g_last_event, sizeof(g_last_event), "%u:%s:%s:%s", event->type,
                title_copy, description_copy, value_copy);
+  g_ui_dirty = 1;
+}
+
+static void RaClientZelda3_ApplyPendingProgress(void) {
+  int result;
+
+  if (!g_client || !g_game_valid)
+    return;
+  if (g_pending_progress_valid) {
+    result = rc_client_deserialize_progress_sized(g_client, g_pending_progress,
+                                                  g_pending_progress_size);
+    g_pending_progress_valid = 0;
+    g_pending_progress_size = 0;
+    if (result == RC_OK) {
+      RaClientZelda3_Log("progress restore=ok");
+      return;
+    }
+    RaClientZelda3_LogResult("progress restore", result);
+    g_pending_progress_reset = 1;
+  }
+  if (g_pending_progress_reset) {
+    rc_client_deserialize_progress_sized(g_client, NULL, 0);
+    g_pending_progress_reset = 0;
+    RaClientZelda3_Log("progress restore=reset");
+  }
 }
 
 static void RC_CCONV RaClientZelda3_OnGameLoaded(int result,
@@ -256,6 +293,8 @@ static void RC_CCONV RaClientZelda3_OnGameLoaded(int result,
     return;
   }
   g_game_valid = 1;
+  RaClientZelda3_ApplyPendingProgress();
+  g_ui_dirty = 1;
 }
 
 static void RC_CCONV RaClientZelda3_OnLogin(int result,
@@ -278,6 +317,7 @@ static void RC_CCONV RaClientZelda3_OnLogin(int result,
     return;
   }
   g_authenticated = 1;
+  g_ui_dirty = 1;
   RaClientZelda3_PersistToken(user);
   rc_client_begin_load_game(client, kRaExpectedHash, RaClientZelda3_OnGameLoaded,
                             NULL);
@@ -305,6 +345,7 @@ static void RC_CCONV RaClientZelda3_OnEvent(const rc_client_event_t *event,
     g_disconnected = 0;
     ++g_reconnect_count;
   }
+  g_ui_dirty = 1;
 }
 
 static void RC_CCONV RaClientZelda3_OnLog(const char *message,
@@ -337,6 +378,11 @@ static void RaClientZelda3_ResetRuntimeState(void) {
   g_last_event[0] = '\0';
   SDL_memset(g_event_counts, 0, sizeof(g_event_counts));
   g_user_agent[0] = '\0';
+  g_pending_progress_size = 0;
+  g_pending_progress_valid = 0;
+  g_pending_progress_reset = 0;
+  g_ui_dirty = 1;
+  g_ui_last_refresh_frame = 0;
 }
 
 static void RaClientZelda3_InitializeClient(void) {
@@ -368,6 +414,140 @@ static void RaClientZelda3_InitializeClient(void) {
     rc_client_begin_login_with_password(g_client, g_config.username, g_config.secret,
                                         RaClientZelda3_OnLogin, NULL);
   SDL_memset(g_config.secret, 0, sizeof(g_config.secret));
+}
+
+static void RaClientZelda3_CopyUiText(char *destination, size_t destination_size,
+                                      const char *source) {
+  size_t i;
+
+  if (!destination || destination_size == 0)
+    return;
+  if (!source) {
+    destination[0] = '\0';
+    return;
+  }
+  for (i = 0; i + 1 < destination_size && source[i]; ++i) {
+    unsigned char value = (unsigned char)source[i];
+    destination[i] = value < 0x20 || value == '\t' ? ' ' : (char)value;
+  }
+  destination[i] = '\0';
+}
+
+static int RaClientZelda3_AppendUiRecord(char *model, size_t model_size,
+                                         size_t *offset, const char *record) {
+  size_t record_size = SDL_strlen(record);
+
+  if (!offset || *offset + record_size >= model_size)
+    return 0;
+  SDL_memcpy(model + *offset, record, record_size);
+  *offset += record_size;
+  model[*offset] = '\0';
+  return 1;
+}
+
+static void RaClientZelda3_UpdateUiModel(void) {
+  const rc_client_user_t *user = NULL;
+  const rc_client_game_t *game = NULL;
+  rc_client_user_game_summary_t summary = {0};
+  rc_client_achievement_list_t *list = NULL;
+  char username[128];
+  char game_title[160];
+  char rich_presence[160] = "";
+  char last_event[256];
+  char record[640];
+  size_t offset = 0;
+  uint32_t i;
+  int disconnected = 0;
+  const char *mode = "disabled";
+  const char *status;
+
+  if (g_config.enabled)
+    mode = g_config.spectator ? "spectator" : "casual";
+  if (!g_config.verified)
+    status = "unverified";
+  else if (!g_config.enabled)
+    status = "disabled";
+  else if (g_disconnected)
+    status = "disconnected";
+  else if (g_game_valid)
+    status = g_authenticated ? "ready" : "loading";
+  else if (g_login_result != 1 || g_game_result != 1 || g_unsupported_game)
+    status = "error";
+  else
+    status = "connecting";
+
+  username[0] = '\0';
+  game_title[0] = '\0';
+  RaClientZelda3_CopyUiText(last_event, sizeof(last_event), g_last_event);
+  if (g_client) {
+    user = rc_client_get_user_info(g_client);
+    game = rc_client_get_game_info(g_client);
+    rc_client_get_user_game_summary(g_client, &summary);
+    disconnected = g_disconnected;
+    if (user)
+      RaClientZelda3_CopyUiText(username, sizeof(username),
+                                user->display_name ? user->display_name :
+                                user->username);
+    if (game)
+      RaClientZelda3_CopyUiText(game_title, sizeof(game_title), game->title);
+    if (rc_client_has_rich_presence(g_client)) {
+      char value[160];
+      rc_client_get_rich_presence_message(g_client, value, sizeof(value));
+      RaClientZelda3_CopyUiText(rich_presence, sizeof(rich_presence), value);
+    }
+  }
+  SDL_snprintf(record, sizeof(record),
+               "V\t1\nM\t%s\t%s\t%s\t%s\t%u\t%u\t%u\t%u\t%u\t%s\t%s\t%d\t0\t%d\n",
+               mode, status, username, game_title, game ? game->id : 0,
+               summary.num_unlocked_achievements, summary.num_core_achievements,
+               summary.points_unlocked, user ? user->score : 0, rich_presence,
+               last_event, disconnected, g_config.spectator);
+  RaClientZelda3_AppendUiRecord(g_ui_build, sizeof(g_ui_build), &offset, record);
+
+  if (g_client && g_game_valid) {
+    list = rc_client_create_achievement_list(
+        g_client, RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE,
+        RC_CLIENT_ACHIEVEMENT_LIST_GROUPING_PROGRESS);
+  }
+  if (list) {
+    for (i = 0; i < list->num_buckets; ++i) {
+      const rc_client_achievement_bucket_t *bucket = &list->buckets[i];
+      uint32_t j;
+      char bucket_label[96];
+
+      RaClientZelda3_CopyUiText(bucket_label, sizeof(bucket_label), bucket->label);
+      for (j = 0; j < bucket->num_achievements; ++j) {
+        const rc_client_achievement_t *achievement = bucket->achievements[j];
+        char title[144];
+        char description[240];
+        char progress[32];
+
+        RaClientZelda3_CopyUiText(title, sizeof(title), achievement->title);
+        RaClientZelda3_CopyUiText(description, sizeof(description),
+                                  achievement->description);
+        RaClientZelda3_CopyUiText(progress, sizeof(progress),
+                                  achievement->measured_progress);
+        SDL_snprintf(record, sizeof(record), "A\t%s\t%u\t%s\t%s\t%u\t%d\t%s\n",
+                     bucket_label, achievement->id, title, description,
+                     achievement->points,
+                     achievement->state == RC_CLIENT_ACHIEVEMENT_STATE_UNLOCKED,
+                     progress);
+        if (!RaClientZelda3_AppendUiRecord(g_ui_build, sizeof(g_ui_build),
+                                           &offset, record))
+          goto done;
+      }
+    }
+  }
+done:
+  if (list)
+    rc_client_destroy_achievement_list(list);
+  if (RaClientZelda3_EnsureCommandMutex()) {
+    SDL_LockMutex(g_command_mutex);
+    SDL_strlcpy(g_commands.ui_model, g_ui_build, sizeof(g_commands.ui_model));
+    SDL_UnlockMutex(g_command_mutex);
+  }
+  g_ui_dirty = 0;
+  g_ui_last_refresh_frame = g_frame_count;
 }
 
 static void RaClientZelda3_UpdateSnapshot(void) {
@@ -428,9 +608,11 @@ static void RaClientZelda3_UpdateSnapshot(void) {
     SDL_strlcpy(g_commands.snapshot, snapshot, sizeof(g_commands.snapshot));
     SDL_UnlockMutex(g_command_mutex);
   }
+  if (g_ui_dirty || g_frame_count - g_ui_last_refresh_frame >= 120)
+    RaClientZelda3_UpdateUiModel();
 }
 
-void RaClientZelda3_QueueConfigure(int enabled, int spectator,
+void RaClientZelda3_QueueConfigure(int enabled, int spectator, int verified,
                                    const char *client_name,
                                    const char *client_version,
                                    const char *username, const char *secret,
@@ -440,7 +622,8 @@ void RaClientZelda3_QueueConfigure(int enabled, int spectator,
   if (!RaClientZelda3_EnsureCommandMutex())
     return;
   SDL_LockMutex(g_command_mutex);
-  RaClientZelda3_CopyConfig(&g_commands.config, enabled, spectator, client_name,
+  RaClientZelda3_CopyConfig(&g_commands.config, enabled, spectator, verified,
+                            client_name,
                             client_version, username, secret, secret_is_token,
                             android_release, android_model);
   g_commands.configure_pending = 1;
@@ -514,7 +697,10 @@ void RaClientZelda3_Pump(void) {
       rc_client_logout(g_client);
     g_authenticated = 0;
     g_game_valid = 0;
+    g_config.enabled = 0;
+    SDL_memset(g_config.username, 0, sizeof(g_config.username));
     g_logout_done = 1;
+    g_ui_dirty = 1;
   }
   /* SDL can suspend this thread between Java lifecycle callbacks; only the
    * resumed game thread performs the required immediate idle. */
@@ -547,6 +733,62 @@ int RaClientZelda3_IsCasualIntegrityEnabled(void) {
   return g_config.enabled && !g_config.spectator;
 }
 
+size_t RaClientZelda3_SerializeProgress(uint8_t *buffer, size_t buffer_size) {
+  size_t size;
+
+  if (!g_client || !g_game_valid || !buffer)
+    return 0;
+  size = rc_client_progress_size(g_client);
+  if (size == 0 || size > buffer_size || size > RA_STATE_MAX_PROGRESS) {
+    RaClientZelda3_Log("progress save=unavailable");
+    return 0;
+  }
+  if (rc_client_serialize_progress_sized(g_client, buffer, size) != RC_OK) {
+    RaClientZelda3_Log("progress save=failed");
+    return 0;
+  }
+  return size;
+}
+
+int RaClientZelda3_DeserializeProgress(const uint8_t *buffer, size_t buffer_size) {
+  int result;
+
+  if (!buffer || buffer_size == 0) {
+    RaClientZelda3_ResetProgress();
+    return 1;
+  }
+  if (buffer_size > RA_STATE_MAX_PROGRESS)
+    return 0;
+  if (!g_client || !g_game_valid) {
+    SDL_memcpy(g_pending_progress, buffer, buffer_size);
+    g_pending_progress_size = buffer_size;
+    g_pending_progress_valid = 1;
+    g_pending_progress_reset = 0;
+    RaClientZelda3_Log("progress restore=pending");
+    return 1;
+  }
+  result = rc_client_deserialize_progress_sized(g_client, buffer, buffer_size);
+  if (result == RC_OK) {
+    g_pending_progress_valid = 0;
+    g_pending_progress_size = 0;
+    g_pending_progress_reset = 0;
+    RaClientZelda3_Log("progress restore=ok");
+    g_ui_dirty = 1;
+    return 1;
+  }
+  RaClientZelda3_LogResult("progress restore", result);
+  RaClientZelda3_ResetProgress();
+  return 0;
+}
+
+void RaClientZelda3_ResetProgress(void) {
+  g_pending_progress_valid = 0;
+  g_pending_progress_size = 0;
+  g_pending_progress_reset = 1;
+  RaClientZelda3_ApplyPendingProgress();
+  g_ui_dirty = 1;
+}
+
 size_t RaClientZelda3_SnapshotCached(char *buffer, size_t buffer_size) {
   if (!buffer || buffer_size == 0)
     return 0;
@@ -556,6 +798,19 @@ size_t RaClientZelda3_SnapshotCached(char *buffer, size_t buffer_size) {
   }
   SDL_LockMutex(g_command_mutex);
   SDL_strlcpy(buffer, g_commands.snapshot, buffer_size);
+  SDL_UnlockMutex(g_command_mutex);
+  return SDL_strlen(buffer);
+}
+
+size_t RaClientZelda3_UiModelCached(char *buffer, size_t buffer_size) {
+  if (!buffer || buffer_size == 0)
+    return 0;
+  if (!RaClientZelda3_EnsureCommandMutex()) {
+    buffer[0] = '\0';
+    return 0;
+  }
+  SDL_LockMutex(g_command_mutex);
+  SDL_strlcpy(buffer, g_commands.ui_model, buffer_size);
   SDL_UnlockMutex(g_command_mutex);
   return SDL_strlen(buffer);
 }
@@ -572,6 +827,8 @@ void RaClientZelda3_Shutdown(void) {
     g_commands.paused = 0;
     SDL_strlcpy(g_commands.snapshot, "enabled=0 lifecycle=shutdown",
                 sizeof(g_commands.snapshot));
+    SDL_strlcpy(g_commands.ui_model, "V\t1\nM\tdisabled\tdisabled\t\t\t0\t0\t0\t0\t0\t\t\t0\t0\t0\n",
+                sizeof(g_commands.ui_model));
     SDL_UnlockMutex(g_command_mutex);
   }
 }

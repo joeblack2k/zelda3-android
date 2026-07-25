@@ -6,6 +6,8 @@ main="$root/app/jni/src/src/main.c"
 rtl="$root/app/jni/src/src/zelda_rtl.c"
 jni="$root/app/jni/src/src/platform/android/ra_client_jni.c"
 client="$root/app/jni/src/src/ra_client_zelda3.c"
+state="$root/app/jni/src/src/ra_state.c"
+state_test="$root/app/jni/src/tests/ra_state_test.c"
 
 awk '
   /bool is_replay = ZeldaRunFrame\(inputs\);/ { seen_frame = NR }
@@ -19,8 +21,16 @@ grep -q 'RaClientZelda3_Idle();' "$main"
 grep -q 'RaClientZelda3_IsCasualIntegrityEnabled()' "$main"
 grep -q 'cmd == kSaveLoad_Replay && RaClientZelda3_IsCasualIntegrityEnabled()' "$rtl"
 grep -q 'ZeldaStopReplayForIntegrity' "$rtl"
-grep -q 'RaClientZelda3_Reset();' "$rtl"
+grep -q 'RaStateDeserialize(payload, payload_size)' "$rtl"
 ! grep -q 'g_client' "$jni"
 grep -q 'rc_client_idle(g_client);' "$client"
+grep -q 'rc_client_progress_size(g_client)' "$client"
+grep -q 'rc_client_create_achievement_list' "$client"
+grep -q 'RaStateLoadFooter(rwops);' "$rtl"
 
-printf '%s\n' 'RA native static assertions passed: 5'
+tmp=${TMPDIR:-/tmp}/zelda3-ra-state-$$
+trap 'rm -f "$tmp"' EXIT
+cc -std=c99 -Wall -Werror -I"$root/app/jni/src/src" "$state_test" "$state" -o "$tmp"
+"$tmp"
+
+printf '%s\n' 'RA native static assertions passed: 6'
