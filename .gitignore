@@ -15,6 +15,10 @@ captures/
 *.apk
 output.json
 
+# Native desktop build artifacts
+*.o
+app/jni/src/zelda3
+
 # IntelliJ
 *.iml
 .idea/

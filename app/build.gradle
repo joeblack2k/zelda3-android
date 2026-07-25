@@ -9,6 +9,7 @@ else {
 
 android {
     compileSdkVersion 31
+    ndkVersion "25.2.9519653"
     defaultConfig {
         if (buildAsApplication) {
             applicationId "com.dishii.zelda3"
@@ -20,7 +21,7 @@ android {
         externalNativeBuild {
             ndkBuild {
                 arguments "APP_PLATFORM=android-16"
-                abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+                abiFilters 'arm64-v8a'
             }
             // cmake {
             //     arguments "-DANDROID_APP_PLATFORM=android-16", "-DANDROID_STL=c++_static"
