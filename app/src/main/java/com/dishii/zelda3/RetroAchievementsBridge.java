@@ -1,6 +1,7 @@
 package com.dishii.zelda3;
 
 import android.content.Context;
+import android.os.Build;
 import java.io.File;
 import java.io.IOException;
 
@@ -8,12 +9,15 @@ import java.io.IOException;
 final class RetroAchievementsBridge {
 
     private static Context applicationContext;
+    private static File externalConfigFile;
+    private static File passwordConfigFile;
 
     private RetroAchievementsBridge() {}
 
     static void configure(Context context, File configFile, RetroAchievementsConfig config,
             RetroAchievementsStorage storage, boolean verified) {
         applicationContext = context.getApplicationContext();
+        externalConfigFile = configFile;
         boolean enabled = verified && config.enabled
                 && config.mode != RetroAchievementsConfig.Mode.DISABLED;
         RetroAchievementsConfig.Credentials credentials = enabled
@@ -23,19 +27,27 @@ final class RetroAchievementsBridge {
                 config.clientName, config.clientVersion,
                 credentials == null ? null : credentials.username,
                 credentials == null ? null : credentials.secret,
-                credentials != null && credentials.token);
-        if (credentials != null && credentials.externalPassword) {
-            try {
-                RetroAchievementsConfig.clearPasswordAfterNativeHandoff(configFile);
-            } catch (IOException ignored) {
-                // The native handoff already completed; external cleanup can retry next launch.
-            }
-        }
+                credentials != null && credentials.token,
+                Build.VERSION.RELEASE, Build.MODEL);
+        passwordConfigFile = credentials != null && credentials.externalPassword ? configFile : null;
     }
 
     static void logout(Context context) {
         new RetroAchievementsStorage(context).clearCredentials();
+        File configFile = externalConfigFile;
+        if (configFile != null) {
+            try {
+                RetroAchievementsConfig.clearExternalCredentials(configFile);
+            } catch (IOException ignored) {
+                // The private store is already durable; external cleanup retries on next launch.
+            }
+        }
+        passwordConfigFile = null;
         nativeLogout();
+    }
+
+    static void setPaused(boolean paused) {
+        nativeSetPaused(paused);
     }
 
     static String snapshot() {
@@ -45,13 +57,24 @@ final class RetroAchievementsBridge {
     static void persistReturnedToken(String username, String token) {
         Context context = applicationContext;
         if (context != null && username != null && token != null) {
-            new RetroAchievementsStorage(context).saveCredentials(username, token);
+            if (new RetroAchievementsStorage(context).saveCredentials(username, token)) {
+                File configFile = passwordConfigFile;
+                passwordConfigFile = null;
+                if (configFile != null) {
+                    try {
+                        RetroAchievementsConfig.clearExternalPassword(configFile);
+                    } catch (IOException ignored) {
+                        // The returned token is durable; external cleanup retries on next launch.
+                    }
+                }
+            }
         }
     }
 
     private static native void nativeConfigure(boolean enabled, boolean spectator,
             String clientName, String clientVersion, String username, String secret,
-            boolean secretIsToken);
+            boolean secretIsToken, String androidRelease, String androidModel);
     private static native void nativeLogout();
+    private static native void nativeSetPaused(boolean paused);
     private static native String nativeSnapshot();
 }

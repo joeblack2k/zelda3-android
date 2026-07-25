@@ -41,11 +41,11 @@ final class RetroAchievementsStorage {
         return preferences.getString(TOKEN, null);
     }
 
-    void saveCredentials(String username, String token) {
-        preferences.edit().putString(USERNAME, username).putString(TOKEN, token).apply();
+    boolean saveCredentials(String username, String token) {
+        return preferences.edit().putString(USERNAME, username).putString(TOKEN, token).commit();
     }
 
-    void clearCredentials() {
-        preferences.edit().remove(USERNAME).remove(TOKEN).apply();
+    boolean clearCredentials() {
+        return preferences.edit().remove(USERNAME).remove(TOKEN).commit();
     }
 }

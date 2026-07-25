@@ -9,8 +9,8 @@ public final class RetroAchievementsConfigTest {
 
     public static void main(String[] args) throws Exception {
         testHeaderStripAndHash();
-        testConfigValidationAndTokenPrecedence();
-        testPrivateTokenAndPasswordFallback();
+        testConfigValidationAndCredentialPairs();
+        testExternalCredentialClearIsDurable();
     }
 
     private static void testHeaderStripAndHash() {
@@ -23,7 +23,7 @@ public final class RetroAchievementsConfigTest {
                 RomVerification.md5Hex("abc".getBytes(StandardCharsets.US_ASCII))), "MD5 must be lowercase");
     }
 
-    private static void testConfigValidationAndTokenPrecedence() throws Exception {
+    private static void testConfigValidationAndCredentialPairs() throws Exception {
         File file = File.createTempFile("ra-config-", ".ini");
         try {
             write(file, "Enabled = true\nMode = Hardcore\nUsername = player\n"
@@ -37,12 +37,18 @@ public final class RetroAchievementsConfigTest {
             check(RetroAchievementsConfig.DEFAULT_CLIENT_NAME.equals(config.clientName),
                     "invalid product name must fall back");
             check("1.2.3".equals(config.clientVersion), "valid product version must survive");
+
+            RetroAchievementsConfig.Credentials credentials =
+                    config.resolveCredentials("private-user", "private-token");
+            check(credentials.token && "player".equals(credentials.username)
+                            && "selected-token".equals(credentials.secret),
+                    "external token and username pair must win");
         } finally {
             file.delete();
         }
     }
 
-    private static void testPrivateTokenAndPasswordFallback() throws Exception {
+    private static void testExternalCredentialClearIsDurable() throws Exception {
         File file = File.createTempFile("ra-config-", ".ini");
         try {
             write(file, "Enabled=true\nUsername=external\nPassword=password\n"
@@ -51,14 +57,38 @@ public final class RetroAchievementsConfigTest {
             RetroAchievementsConfig.Credentials credentials =
                     config.resolveCredentials("private-user", "private-token");
             check(credentials.token && "private-token".equals(credentials.secret),
-                    "private token must beat external password");
-            check("external".equals(credentials.username), "external username must win");
+                    "private token must win only with private username");
+            check("private-user".equals(credentials.username),
+                    "private token must not mix with external username");
             check(RetroAchievementsConfig.DEFAULT_CLIENT_VERSION.equals(config.clientVersion),
                     "invalid version must fall back");
 
             credentials = config.resolveCredentials("private-user", null);
             check(!credentials.token && credentials.externalPassword,
                     "external password must be final fallback");
+            check("external".equals(credentials.username),
+                    "external password must retain external username");
+
+            write(file, "Enabled=true\nToken=orphaned\nPassword=password\n");
+            config = RetroAchievementsConfig.load(file);
+            check(config.resolveCredentials("private-user", null) == null,
+                    "orphaned external credentials must not mix with private credentials");
+
+            write(file, "Enabled=true\nUsername=external\nPassword=password\nToken=token\nOther=value\n");
+            RetroAchievementsConfig.clearExternalPassword(file);
+            String passwordCleared = new String(java.nio.file.Files.readAllBytes(file.toPath()),
+                    StandardCharsets.UTF_8);
+            check(passwordCleared.contains("Username=external\n")
+                            && passwordCleared.contains("Password=\n")
+                            && passwordCleared.contains("Token=token\n"),
+                    "returned-token cleanup must clear only the external password");
+
+            RetroAchievementsConfig.clearExternalCredentials(file);
+            String cleared = new String(java.nio.file.Files.readAllBytes(file.toPath()),
+                    StandardCharsets.UTF_8);
+            check(cleared.contains("Username=\n") && cleared.contains("Password=\n")
+                            && cleared.contains("Token=\n") && cleared.contains("Other=value\n"),
+                    "logout cleanup must clear every external credential line");
         } finally {
             file.delete();
         }

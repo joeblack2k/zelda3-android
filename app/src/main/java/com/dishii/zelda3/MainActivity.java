@@ -22,6 +22,8 @@ import android.util.Log;
 public class MainActivity extends SDLActivity {
 
     private static final String TAG = "Zelda3SecondScreen";
+    // Context.RECEIVER_NOT_EXPORTED, unavailable as a named constant at compileSdk 31.
+    private static final int RECEIVER_NOT_EXPORTED = 4;
 
     private SecondScreenPresentation secondScreen;
     private DisplayManager displayManager;
@@ -92,7 +94,7 @@ public class MainActivity extends SDLActivity {
                 dumpFilter.addAction("com.dishii.zelda3.RA_DUMP");
             }
             if (Build.VERSION.SDK_INT >= 33) {
-                registerReceiver(dumpReceiver, dumpFilter, 2 /* Context.RECEIVER_EXPORTED */);
+                registerReceiver(dumpReceiver, dumpFilter, RECEIVER_NOT_EXPORTED);
             } else {
                 registerReceiver(dumpReceiver, dumpFilter);
             }
@@ -250,6 +252,18 @@ public class MainActivity extends SDLActivity {
     // itself only pauses the native thread in onStop on API 24+. onStop means
     // the user actually left the app, so the bottom screen should go back to
     // whatever the system shows there instead of keeping the mod UI up.
+    @Override
+    protected void onPause() {
+        RetroAchievementsBridge.setPaused(true);
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        RetroAchievementsBridge.setPaused(false);
+    }
+
     @Override
     protected void onStop() {
         secondScreenHidden = true;

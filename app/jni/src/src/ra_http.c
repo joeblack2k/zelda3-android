@@ -27,7 +27,7 @@ static RaHttpPending *g_pending;
 static RaHttpCompletion *g_completions;
 static uint64_t g_next_request_id = 1;
 static int g_http_shutdown;
-static char g_user_agent[256] = "Zelda3AndroidRA/0.1.0";
+static char g_user_agent[384] = "Zelda3AndroidRA/0.1.0";
 static RaHttpStats g_http_stats;
 
 #if defined(__ANDROID__)
@@ -74,6 +74,17 @@ static void RaHttpFreeCompletion(RaHttpCompletion *completion) {
 void RaHttpInitialize(void) {
   if (!g_http_mutex)
     g_http_mutex = SDL_CreateMutex();
+  if (!g_http_mutex)
+    return;
+
+  SDL_LockMutex(g_http_mutex);
+  if (g_http_shutdown) {
+    g_http_shutdown = 0;
+    g_next_request_id = 1;
+    SDL_memset(&g_http_stats, 0, sizeof(g_http_stats));
+    SDL_strlcpy(g_user_agent, "Zelda3AndroidRA/0.1.0", sizeof(g_user_agent));
+  }
+  SDL_UnlockMutex(g_http_mutex);
 }
 
 void RaHttpSetUserAgent(const char *user_agent) {
@@ -139,7 +150,7 @@ void RaHttpDispatch(const rc_api_request_t *request,
   char *url;
   char *post_data;
   char *content_type;
-  char user_agent[256];
+  char user_agent[384];
   uint64_t request_id;
 
   if (!request || !request->url || !callback)

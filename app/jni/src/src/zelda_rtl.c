@@ -870,6 +870,8 @@ void SaveLoadSlot(int cmd, int which) {
   char name[128];
   SDL_RWops* rwops;
 
+  if (cmd == kSaveLoad_Replay && RaClientZelda3_IsCasualIntegrityEnabled())
+    return;
   if (which & 256) {
     if (cmd == kSaveLoad_Save)
       return;
@@ -924,6 +926,9 @@ void StateRecoderMultiPatch_Patch(StateRecoderMultiPatch *mp, uint32 addr, uint8
 void PatchCommand(char c) {
   StateRecoderMultiPatch mp;
 
+  if (RaClientZelda3_IsCasualIntegrityEnabled() &&
+      (c == 'w' || c == 'W' || c == 'o' || c == 'E'))
+    return;
   StateRecoderMultiPatch_Init(&mp);
   if (c == 'w') {
     StateRecoderMultiPatch_Patch(&mp, 0xf372, 80);  // health filler
@@ -945,6 +950,10 @@ void PatchCommand(char c) {
     StateRecoderMultiPatch_Patch(&mp, 0x37f, g_ram[0x37f] ^ 1);
   }
   StateRecoderMultiPatch_Commit(&mp);
+}
+
+void ZeldaStopReplayForIntegrity(void) {
+  StateRecorder_StopReplay(&state_recorder);
 }
 
 /*

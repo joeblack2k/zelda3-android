@@ -586,6 +586,11 @@ int main(int argc, char** argv) {
     }
 
     RaClientZelda3_Pump();
+    if (RaClientZelda3_IsCasualIntegrityEnabled()) {
+      SDL_LockMutex(g_audio_mutex);
+      ZeldaStopReplayForIntegrity();
+      SDL_UnlockMutex(g_audio_mutex);
+    }
 
     if (g_paused != audiopaused) {
       audiopaused = g_paused;
@@ -757,26 +762,26 @@ static void HandleCommand_Locked(uint32 j, bool pressed) {
   } else if (j <= kKeys_Save_Last) {
     SaveLoadSlot(kSaveLoad_Save, j - kKeys_Save);
   } else if (j <= kKeys_Replay_Last) {
-    if (!RaClientZelda3_IsCasualAuthenticatedGameLoaded())
+    if (!RaClientZelda3_IsCasualIntegrityEnabled())
       SaveLoadSlot(kSaveLoad_Replay, j - kKeys_Replay);
   } else if (j <= kKeys_LoadRef_Last) {
     SaveLoadSlot(kSaveLoad_Load, 256 + j - kKeys_LoadRef);
   } else if (j <= kKeys_ReplayRef_Last) {
-    if (!RaClientZelda3_IsCasualAuthenticatedGameLoaded())
+    if (!RaClientZelda3_IsCasualIntegrityEnabled())
       SaveLoadSlot(kSaveLoad_Replay, 256 + j - kKeys_ReplayRef);
   } else {
     switch (j) {
     case kKeys_CheatLife:
-      if (!RaClientZelda3_IsCasualAuthenticatedGameLoaded()) PatchCommand('w');
+      if (!RaClientZelda3_IsCasualIntegrityEnabled()) PatchCommand('w');
       break;
     case kKeys_CheatEquipment:
-      if (!RaClientZelda3_IsCasualAuthenticatedGameLoaded()) PatchCommand('W');
+      if (!RaClientZelda3_IsCasualIntegrityEnabled()) PatchCommand('W');
       break;
     case kKeys_CheatKeys:
-      if (!RaClientZelda3_IsCasualAuthenticatedGameLoaded()) PatchCommand('o');
+      if (!RaClientZelda3_IsCasualIntegrityEnabled()) PatchCommand('o');
       break;
     case kKeys_CheatWalkThroughWalls:
-      if (!RaClientZelda3_IsCasualAuthenticatedGameLoaded()) PatchCommand('E');
+      if (!RaClientZelda3_IsCasualIntegrityEnabled()) PatchCommand('E');
       break;
     case kKeys_ClearKeyLog: PatchCommand('k'); break;
     case kKeys_StopReplay: PatchCommand('l'); break;

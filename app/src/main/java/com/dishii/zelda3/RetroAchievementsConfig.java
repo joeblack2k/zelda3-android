@@ -105,7 +105,15 @@ final class RetroAchievementsConfig {
         }
     }
 
-    static void clearPasswordAfterNativeHandoff(File file) throws IOException {
+    static void clearExternalPassword(File file) throws IOException {
+        clearExternalLines(file, false);
+    }
+
+    static void clearExternalCredentials(File file) throws IOException {
+        clearExternalLines(file, true);
+    }
+
+    private static void clearExternalLines(File file, boolean allCredentials) throws IOException {
         if (!file.isFile()) {
             return;
         }
@@ -114,36 +122,41 @@ final class RetroAchievementsConfig {
             String line;
             while ((line = reader.readLine()) != null) {
                 int equals = line.indexOf('=');
-                if (equals >= 0 && "password".equalsIgnoreCase(line.substring(0, equals).trim())) {
+                if (equals >= 0 && (allCredentials
+                        ? isCredentialKey(line.substring(0, equals))
+                        : "password".equalsIgnoreCase(line.substring(0, equals).trim()))) {
                     line = line.substring(0, equals + 1);
                 }
                 updated.append(line).append('\n');
             }
         }
-        try (Writer writer = new OutputStreamWriter(new FileOutputStream(file), "UTF-8")) {
+        try (FileOutputStream output = new FileOutputStream(file);
+                Writer writer = new OutputStreamWriter(output, "UTF-8")) {
             writer.write(updated.toString());
+            writer.flush();
+            output.getFD().sync();
         }
     }
 
     Credentials resolveCredentials(String privateUsername, String privateToken) {
-        String selectedUsername = username != null ? username : nonEmpty(privateUsername);
-        String selectedSecret;
-        boolean selectedToken;
-        boolean externalPassword = false;
-
-        if (token != null) {
-            selectedSecret = token;
-            selectedToken = true;
-        } else if (nonEmpty(privateToken) != null) {
-            selectedSecret = nonEmpty(privateToken);
-            selectedToken = true;
-        } else {
-            selectedSecret = password;
-            selectedToken = false;
-            externalPassword = password != null;
+        String storedUsername = nonEmpty(privateUsername);
+        String storedToken = nonEmpty(privateToken);
+        if (username != null && token != null) {
+            return new Credentials(username, token, true, false);
         }
-        return selectedUsername == null || selectedSecret == null ? null
-                : new Credentials(selectedUsername, selectedSecret, selectedToken, externalPassword);
+        if (storedUsername != null && storedToken != null) {
+            return new Credentials(storedUsername, storedToken, true, false);
+        }
+        if (username != null && password != null) {
+            return new Credentials(username, password, false, true);
+        }
+        return null;
+    }
+
+    private static boolean isCredentialKey(String key) {
+        return "username".equalsIgnoreCase(key.trim())
+                || "password".equalsIgnoreCase(key.trim())
+                || "token".equalsIgnoreCase(key.trim());
     }
 
     private static boolean parseBoolean(String value) {
