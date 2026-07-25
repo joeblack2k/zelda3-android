@@ -55,6 +55,12 @@ public class MainActivity extends SDLActivity {
     private final BroadcastReceiver dumpReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            if (BuildConfig.DEBUG && "com.dishii.zelda3.RA_DUMP".equals(intent.getAction())) {
+                try {
+                    Log.i("Zelda3RA", RetroAchievementsBridge.snapshot());
+                } catch (UnsatisfiedLinkError ignored) {}
+                return;
+            }
             if (secondScreen != null) {
                 secondScreen.dumpToFile(new File(getExternalFilesDir(null), "second_screen.png"));
             } else if (CompanionActivity.instance != null) {
@@ -82,6 +88,9 @@ public class MainActivity extends SDLActivity {
             showSecondScreenIfPresent();
 
             IntentFilter dumpFilter = new IntentFilter("com.dishii.zelda3.DUMP");
+            if (BuildConfig.DEBUG) {
+                dumpFilter.addAction("com.dishii.zelda3.RA_DUMP");
+            }
             if (Build.VERSION.SDK_INT >= 33) {
                 registerReceiver(dumpReceiver, dumpFilter, 2 /* Context.RECEIVER_EXPORTED */);
             } else {
@@ -133,6 +142,8 @@ public class MainActivity extends SDLActivity {
                     // own ini and saves, so don't let this kill the launch
                     Log.e(TAG, "Copying default config/saves failed", e);
                 }
+
+                configureRetroAchievements(externalDir);
 
             }
         }
@@ -280,6 +291,20 @@ public class MainActivity extends SDLActivity {
             e.printStackTrace();
         }
     }
+
+    private void configureRetroAchievements(File externalDir) {
+        File configFile = new File(externalDir, RetroAchievementsConfig.FILE_NAME);
+        RetroAchievementsStorage storage = new RetroAchievementsStorage(this);
+        try {
+            RetroAchievementsConfig config = RetroAchievementsConfig.load(configFile);
+            boolean verified = RomVerification.CANONICAL_US_MD5.equals(
+                    storage.getVerifiedRomHash());
+            RetroAchievementsBridge.configure(this, configFile, config, storage, verified);
+        } catch (IOException e) {
+            Log.w("Zelda3RA", "RetroAchievements config unavailable");
+        }
+    }
+
     // Check if external storage is available and writable
     private boolean isExternalStorageWritable() {
         String state = Environment.getExternalStorageState();

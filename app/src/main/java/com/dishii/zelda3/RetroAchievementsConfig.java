@@ -17,8 +17,22 @@ final class RetroAchievementsConfig {
     }
 
     static final String FILE_NAME = "retroachievements.ini";
-    static final String DEFAULT_CLIENT_NAME = "Zelda3Android";
-    static final String DEFAULT_CLIENT_VERSION = "2.0";
+    static final String DEFAULT_CLIENT_NAME = "Zelda3AndroidRA";
+    static final String DEFAULT_CLIENT_VERSION = "0.1.0";
+
+    static final class Credentials {
+        final String username;
+        final String secret;
+        final boolean token;
+        final boolean externalPassword;
+
+        Credentials(String username, String secret, boolean token, boolean externalPassword) {
+            this.username = username;
+            this.secret = secret;
+            this.token = token;
+            this.externalPassword = externalPassword;
+        }
+    }
 
     final boolean enabled;
     final Mode mode;
@@ -70,8 +84,8 @@ final class RetroAchievementsConfig {
         String selectedToken = nonEmpty(token);
         return new RetroAchievementsConfig(parseBoolean(enabled), parseMode(mode),
                 nonEmpty(username), selectedToken == null ? nonEmpty(password) : null, selectedToken,
-                validProductValue(clientName) ? clientName.trim() : DEFAULT_CLIENT_NAME,
-                validProductValue(clientVersion) ? clientVersion.trim() : DEFAULT_CLIENT_VERSION);
+                validClientName(clientName) ? clientName.trim() : DEFAULT_CLIENT_NAME,
+                validClientVersion(clientVersion) ? clientVersion.trim() : DEFAULT_CLIENT_VERSION);
     }
 
     static void createDefaultIfMissing(File file) throws IOException {
@@ -111,10 +125,25 @@ final class RetroAchievementsConfig {
         }
     }
 
-    void persistReturnedToken(RetroAchievementsStorage storage, String returnedToken) {
-        if (returnedToken != null && returnedToken.length() > 0) {
-            storage.saveReturnedToken(returnedToken);
+    Credentials resolveCredentials(String privateUsername, String privateToken) {
+        String selectedUsername = username != null ? username : nonEmpty(privateUsername);
+        String selectedSecret;
+        boolean selectedToken;
+        boolean externalPassword = false;
+
+        if (token != null) {
+            selectedSecret = token;
+            selectedToken = true;
+        } else if (nonEmpty(privateToken) != null) {
+            selectedSecret = nonEmpty(privateToken);
+            selectedToken = true;
+        } else {
+            selectedSecret = password;
+            selectedToken = false;
+            externalPassword = password != null;
         }
+        return selectedUsername == null || selectedSecret == null ? null
+                : new Credentials(selectedUsername, selectedSecret, selectedToken, externalPassword);
     }
 
     private static boolean parseBoolean(String value) {
@@ -136,11 +165,11 @@ final class RetroAchievementsConfig {
         return value == null || value.trim().length() == 0 ? null : value.trim();
     }
 
-    private static boolean validProductValue(String value) {
-        if (value == null) {
-            return false;
-        }
-        String trimmed = value.trim();
-        return trimmed.length() > 0 && trimmed.length() <= 64 && trimmed.matches("[A-Za-z0-9][A-Za-z0-9 ._-]*");
+    private static boolean validClientName(String value) {
+        return value != null && value.trim().matches("[A-Za-z0-9][A-Za-z0-9._-]{0,63}");
+    }
+
+    private static boolean validClientVersion(String value) {
+        return value != null && value.trim().matches("[0-9]+\\.[0-9]+\\.[0-9]+");
     }
 }

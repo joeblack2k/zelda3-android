@@ -10,6 +10,7 @@ public final class RetroAchievementsConfigTest {
     public static void main(String[] args) throws Exception {
         testHeaderStripAndHash();
         testConfigValidationAndTokenPrecedence();
+        testPrivateTokenAndPasswordFallback();
     }
 
     private static void testHeaderStripAndHash() {
@@ -27,7 +28,7 @@ public final class RetroAchievementsConfigTest {
         try {
             write(file, "Enabled = true\nMode = Hardcore\nUsername = player\n"
                     + "Password = ignored-password\nToken = selected-token\n"
-                    + "ClientName = invalid/name\nClientVersion = 1.2.3\n");
+                    + "ClientName = invalid name\nClientVersion = 1.2.3\n");
             RetroAchievementsConfig config = RetroAchievementsConfig.load(file);
             check(config.enabled, "Enabled must parse");
             check(config.mode == RetroAchievementsConfig.Mode.SPECTATOR, "invalid mode must be safe");
@@ -36,6 +37,28 @@ public final class RetroAchievementsConfigTest {
             check(RetroAchievementsConfig.DEFAULT_CLIENT_NAME.equals(config.clientName),
                     "invalid product name must fall back");
             check("1.2.3".equals(config.clientVersion), "valid product version must survive");
+        } finally {
+            file.delete();
+        }
+    }
+
+    private static void testPrivateTokenAndPasswordFallback() throws Exception {
+        File file = File.createTempFile("ra-config-", ".ini");
+        try {
+            write(file, "Enabled=true\nUsername=external\nPassword=password\n"
+                    + "ClientName=Zelda3AndroidRA\nClientVersion=version-two\n");
+            RetroAchievementsConfig config = RetroAchievementsConfig.load(file);
+            RetroAchievementsConfig.Credentials credentials =
+                    config.resolveCredentials("private-user", "private-token");
+            check(credentials.token && "private-token".equals(credentials.secret),
+                    "private token must beat external password");
+            check("external".equals(credentials.username), "external username must win");
+            check(RetroAchievementsConfig.DEFAULT_CLIENT_VERSION.equals(config.clientVersion),
+                    "invalid version must fall back");
+
+            credentials = config.resolveCredentials("private-user", null);
+            check(!credentials.token && credentials.externalPassword,
+                    "external password must be final fallback");
         } finally {
             file.delete();
         }

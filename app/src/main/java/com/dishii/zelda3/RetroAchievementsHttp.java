@@ -28,6 +28,12 @@ final class RetroAchievementsHttp {
 
     private RetroAchievementsHttp() {}
 
+    static final class ResponseTooLargeException extends IOException {
+        ResponseTooLargeException() {
+            super("response body too large");
+        }
+    }
+
     static boolean enqueue(final long requestId, final String url, final byte[] postData,
             final String contentType, final String userAgent) {
         if (!isHttpsUrl(url)) {
@@ -56,13 +62,37 @@ final class RetroAchievementsHttp {
         }
     }
 
+    static boolean sameOrigin(URL first, URL second) {
+        return first.getProtocol().equalsIgnoreCase(second.getProtocol())
+                && first.getHost().equalsIgnoreCase(second.getHost())
+                && effectivePort(first) == effectivePort(second);
+    }
+
+    static int classifyIOException(IOException error, int status) {
+        if (error instanceof ResponseTooLargeException) {
+            return CLIENT_ERROR;
+        }
+        return status > 0 ? status : RETRYABLE_TRANSPORT_ERROR;
+    }
+
+    static int queueCapacityForTest() {
+        return EXECUTOR.getQueue().size() + EXECUTOR.getQueue().remainingCapacity();
+    }
+
+    private static int effectivePort(URL url) {
+        int port = url.getPort();
+        return port >= 0 ? port : url.getDefaultPort();
+    }
+
     private static void execute(long requestId, String url, byte[] postData, String contentType,
             String userAgent) {
         String currentUrl = url;
+        URL originalUrl;
         boolean usePost = postData != null;
         int status = RETRYABLE_TRANSPORT_ERROR;
 
         try {
+            originalUrl = new URL(url);
             for (int redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
                 HttpsURLConnection connection = (HttpsURLConnection) new URL(currentUrl)
                         .openConnection();
@@ -89,11 +119,13 @@ final class RetroAchievementsHttp {
                             nativeComplete(requestId, status, null);
                             return;
                         }
-                        currentUrl = new URL(new URL(currentUrl), location).toString();
-                        if (!isHttpsUrl(currentUrl)) {
-                            nativeComplete(requestId, status, null);
+                        URL nextUrl = new URL(new URL(currentUrl), location);
+                        if (!"https".equalsIgnoreCase(nextUrl.getProtocol())
+                                || !sameOrigin(originalUrl, nextUrl)) {
+                            nativeComplete(requestId, CLIENT_ERROR, null);
                             return;
                         }
+                        currentUrl = nextUrl.toString();
                         if (status == HttpsURLConnection.HTTP_SEE_OTHER) {
                             usePost = false;
                         }
@@ -110,8 +142,7 @@ final class RetroAchievementsHttp {
             }
             nativeComplete(requestId, status, null);
         } catch (IOException e) {
-            nativeComplete(requestId,
-                    status > 0 ? status : RETRYABLE_TRANSPORT_ERROR, null);
+            nativeComplete(requestId, classifyIOException(e, status), null);
         } catch (RuntimeException e) {
             nativeComplete(requestId, CLIENT_ERROR, null);
         }
@@ -124,7 +155,7 @@ final class RetroAchievementsHttp {
                 || status == 307 || status == 308;
     }
 
-    private static byte[] readBody(InputStream input) throws IOException {
+    static byte[] readBody(InputStream input) throws IOException {
         if (input == null) {
             return new byte[0];
         }
@@ -135,7 +166,7 @@ final class RetroAchievementsHttp {
             int count;
             while ((count = source.read(buffer)) != -1) {
                 if (count > MAX_RESPONSE_BYTES - total) {
-                    throw new IOException("response body too large");
+                    throw new ResponseTooLargeException();
                 }
                 output.write(buffer, 0, count);
                 total += count;

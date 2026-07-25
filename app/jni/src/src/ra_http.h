@@ -10,9 +10,19 @@ enum {
   kRaHttpMaxResponseBytes = 1024 * 1024,
 };
 
+typedef struct RaHttpStats {
+  uint32_t dispatched;
+  uint32_t completed;
+  uint32_t dropped;
+  uint32_t pending;
+  uint32_t queued_completions;
+} RaHttpStats;
+
 void RaHttpInitialize(void);
 void RaHttpShutdown(void);
 void RaHttpPumpCompletions(void);
+void RaHttpSetUserAgent(const char *user_agent);
+void RaHttpGetStats(RaHttpStats *stats);
 
 void RaHttpDispatch(const rc_api_request_t *request,
                     rc_client_server_callback_t callback, void *callback_data,

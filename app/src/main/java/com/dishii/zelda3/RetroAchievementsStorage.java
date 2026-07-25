@@ -40,4 +40,12 @@ final class RetroAchievementsStorage {
     String getReturnedToken() {
         return preferences.getString(TOKEN, null);
     }
+
+    void saveCredentials(String username, String token) {
+        preferences.edit().putString(USERNAME, username).putString(TOKEN, token).apply();
+    }
+
+    void clearCredentials() {
+        preferences.edit().remove(USERNAME).remove(TOKEN).apply();
+    }
 }

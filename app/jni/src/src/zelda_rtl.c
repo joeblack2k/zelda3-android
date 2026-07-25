@@ -14,6 +14,7 @@
 #include "audio.h"
 #include "assets.h"
 #include "android_logging.h"
+#include "ra_client_zelda3.h"
 /*
  * The saving functions have been rewritten in this file to support saving to external storage on android.
  */
@@ -888,6 +889,8 @@ void SaveLoadSlot(int cmd, int which) {
       StateRecorder_Save(&state_recorder, rwops);
 
     SDL_RWclose(rwops);
+    if (cmd != kSaveLoad_Save)
+      RaClientZelda3_Reset();
   }
 }
 

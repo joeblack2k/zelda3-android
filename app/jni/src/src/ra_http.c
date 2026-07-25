@@ -27,6 +27,8 @@ static RaHttpPending *g_pending;
 static RaHttpCompletion *g_completions;
 static uint64_t g_next_request_id = 1;
 static int g_http_shutdown;
+static char g_user_agent[256] = "Zelda3AndroidRA/0.1.0";
+static RaHttpStats g_http_stats;
 
 #if defined(__ANDROID__)
 int RaHttpPlatformEnqueue(uint64_t request_id, const char *url,
@@ -74,6 +76,31 @@ void RaHttpInitialize(void) {
     g_http_mutex = SDL_CreateMutex();
 }
 
+void RaHttpSetUserAgent(const char *user_agent) {
+  if (!user_agent || !user_agent[0])
+    return;
+
+  RaHttpInitialize();
+  if (!g_http_mutex)
+    return;
+
+  SDL_LockMutex(g_http_mutex);
+  SDL_strlcpy(g_user_agent, user_agent, sizeof(g_user_agent));
+  SDL_UnlockMutex(g_http_mutex);
+}
+
+void RaHttpGetStats(RaHttpStats *stats) {
+  if (!stats)
+    return;
+  memset(stats, 0, sizeof(*stats));
+  if (!g_http_mutex)
+    return;
+
+  SDL_LockMutex(g_http_mutex);
+  *stats = g_http_stats;
+  SDL_UnlockMutex(g_http_mutex);
+}
+
 void RaHttpShutdown(void) {
   RaHttpPending *pending;
   RaHttpCompletion *completion;
@@ -87,6 +114,10 @@ void RaHttpShutdown(void) {
   completion = g_completions;
   g_pending = NULL;
   g_completions = NULL;
+  g_http_stats.dropped += g_http_stats.pending +
+                          g_http_stats.queued_completions;
+  g_http_stats.pending = 0;
+  g_http_stats.queued_completions = 0;
   SDL_UnlockMutex(g_http_mutex);
 
   while (pending) {
@@ -108,7 +139,7 @@ void RaHttpDispatch(const rc_api_request_t *request,
   char *url;
   char *post_data;
   char *content_type;
-  char user_agent[64];
+  char user_agent[256];
   uint64_t request_id;
 
   if (!request || !request->url || !callback)
@@ -149,10 +180,11 @@ void RaHttpDispatch(const rc_api_request_t *request,
   pending->client = client;
   pending->next = g_pending;
   g_pending = pending;
+  ++g_http_stats.dispatched;
+  ++g_http_stats.pending;
+  SDL_strlcpy(user_agent, g_user_agent, sizeof(user_agent));
   SDL_UnlockMutex(g_http_mutex);
 
-  SDL_snprintf(user_agent, sizeof(user_agent), "%s/%s", "Zelda3Android",
-               "2.0");
   if (!RaHttpPlatformEnqueue(request_id, url, post_data, content_type,
                              user_agent)) {
     RaHttpComplete(request_id, RC_API_SERVER_RESPONSE_RETRYABLE_CLIENT_ERROR,
@@ -170,12 +202,17 @@ void RaHttpComplete(uint64_t request_id, int http_status, const uint8_t *body,
   RaHttpPending *pending;
   RaHttpCompletion *completion;
 
-  if (!g_http_mutex || (body_size != 0 && !body) ||
-      body_size > kRaHttpMaxResponseBytes)
+  if (!g_http_mutex)
     return;
+  if ((body_size != 0 && !body) || body_size > kRaHttpMaxResponseBytes) {
+    http_status = RC_API_SERVER_RESPONSE_CLIENT_ERROR;
+    body = NULL;
+    body_size = 0;
+  }
 
   SDL_LockMutex(g_http_mutex);
   if (g_http_shutdown) {
+    ++g_http_stats.dropped;
     SDL_UnlockMutex(g_http_mutex);
     return;
   }
@@ -185,6 +222,7 @@ void RaHttpComplete(uint64_t request_id, int http_status, const uint8_t *body,
     pending_ptr = &(*pending_ptr)->next;
   pending = *pending_ptr;
   if (!pending) {
+    ++g_http_stats.dropped;
     SDL_UnlockMutex(g_http_mutex);
     return;
   }
@@ -201,6 +239,7 @@ void RaHttpComplete(uint64_t request_id, int http_status, const uint8_t *body,
   }
 
   *pending_ptr = pending->next;
+  --g_http_stats.pending;
   if (completion) {
     completion->callback = pending->callback;
     completion->callback_data = pending->callback_data;
@@ -208,6 +247,10 @@ void RaHttpComplete(uint64_t request_id, int http_status, const uint8_t *body,
     completion->body_size = body_size;
     completion->next = g_completions;
     g_completions = completion;
+    ++g_http_stats.completed;
+    ++g_http_stats.queued_completions;
+  } else {
+    ++g_http_stats.dropped;
   }
   SDL_UnlockMutex(g_http_mutex);
 
@@ -223,6 +266,7 @@ void RaHttpPumpCompletions(void) {
   SDL_LockMutex(g_http_mutex);
   completion = g_completions;
   g_completions = NULL;
+  g_http_stats.queued_completions = 0;
   SDL_UnlockMutex(g_http_mutex);
 
   while (completion) {
