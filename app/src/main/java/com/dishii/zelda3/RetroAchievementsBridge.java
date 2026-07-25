@@ -34,14 +34,16 @@ final class RetroAchievementsBridge {
     }
 
     static void logout(Context context) {
-        new RetroAchievementsStorage(context).logout();
+        RetroAchievementsStorage storage = new RetroAchievementsStorage(context);
+        storage.logout();
         File configFile = externalConfigFile;
-        if (configFile != null) {
-            try {
+        try {
+            if (configFile != null) {
                 RetroAchievementsConfig.clearExternalCredentials(configFile);
-            } catch (IOException ignored) {
-                // The private store is already durable; external cleanup retries on next launch.
             }
+            storage.clearLoggedOut();
+        } catch (IOException ignored) {
+            // Keep the tombstone so stale external credentials cannot log in again.
         }
         passwordConfigFile = null;
         nativeLogout();

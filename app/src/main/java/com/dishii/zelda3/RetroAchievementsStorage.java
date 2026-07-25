@@ -54,4 +54,8 @@ final class RetroAchievementsStorage {
     boolean isLoggedOut() {
         return preferences.getBoolean(LOGGED_OUT, false);
     }
+
+    boolean clearLoggedOut() {
+        return preferences.edit().remove(LOGGED_OUT).commit();
+    }
 }

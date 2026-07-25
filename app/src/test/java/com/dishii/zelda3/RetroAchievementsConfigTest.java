@@ -23,6 +23,15 @@ public final class RetroAchievementsConfigTest {
                     "logout tombstone must block stale external credentials after cleanup failure");
             check(config.resolveCredentials("private-user", "fresh-token", false).token,
                     "logout tombstone must allow a newly persisted private token");
+
+            RetroAchievementsConfig.clearExternalCredentials(file);
+            write(file, "Enabled=true\nUsername=new-user\nToken=new-token\n");
+            config = RetroAchievementsConfig.load(file);
+            RetroAchievementsConfig.Credentials credentials =
+                    config.resolveCredentials(null, null, true);
+            check(credentials != null && credentials.token
+                            && "new-user".equals(credentials.username),
+                    "successful cleanup must allow intentional new external credentials");
         } finally {
             file.delete();
         }
