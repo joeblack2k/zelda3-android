@@ -104,6 +104,7 @@ task raJvmTestClasses(type: JavaCompile) {
             'src/test/java/com/dishii/zelda3/RetroAchievementsConfigTest.java',
             'src/test/java/com/dishii/zelda3/RetroAchievementsHttpTest.java')
     destinationDirectory.set(file("$buildDir/ra-jvm-tests"))
+    classpath = files()
     sourceCompatibility = '1.8'
     targetCompatibility = '1.8'
 }
