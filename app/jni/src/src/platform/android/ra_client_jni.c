@@ -1,9 +1,39 @@
 #include "../../ra_client_zelda3.h"
 
 #include <jni.h>
+#include <string.h>
 
 static const char *JniGetString(JNIEnv *env, jstring value) {
   return value ? (*env)->GetStringUTFChars(env, value, NULL) : NULL;
+}
+
+static jstring JniNewStringFromUtf8(JNIEnv *env, const char *value) {
+  jbyteArray bytes;
+  jclass string_class;
+  jmethodID constructor;
+  jstring charset;
+  jstring result;
+  jsize length = value ? (jsize)strlen(value) : 0;
+
+  bytes = (*env)->NewByteArray(env, length);
+  if (!bytes)
+    return NULL;
+  if (length)
+    (*env)->SetByteArrayRegion(env, bytes, 0, length, (const jbyte *)value);
+  string_class = (*env)->FindClass(env, "java/lang/String");
+  charset = (*env)->NewStringUTF(env, "UTF-8");
+  if (!string_class || !charset)
+    return NULL;
+  constructor = (*env)->GetMethodID(env, string_class, "<init>",
+                                    "([BLjava/lang/String;)V");
+  if (!constructor)
+    return NULL;
+  result = (jstring)(*env)->NewObject(env, string_class, constructor, bytes,
+                                     charset);
+  (*env)->DeleteLocalRef(env, charset);
+  (*env)->DeleteLocalRef(env, string_class);
+  (*env)->DeleteLocalRef(env, bytes);
+  return result;
 }
 
 JNIEXPORT void JNICALL
@@ -62,7 +92,7 @@ Java_com_dishii_zelda3_RetroAchievementsBridge_nativeSnapshot(
 
   (void)clazz;
   RaClientZelda3_SnapshotCached(snapshot, sizeof(snapshot));
-  return (*env)->NewStringUTF(env, snapshot);
+  return JniNewStringFromUtf8(env, snapshot);
 }
 
 JNIEXPORT jstring JNICALL
@@ -72,5 +102,5 @@ Java_com_dishii_zelda3_RetroAchievementsBridge_nativeUiModel(
 
   (void)clazz;
   RaClientZelda3_UiModelCached(ui_model, sizeof(ui_model));
-  return (*env)->NewStringUTF(env, ui_model);
+  return JniNewStringFromUtf8(env, ui_model);
 }

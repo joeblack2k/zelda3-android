@@ -26,6 +26,7 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -1187,19 +1188,19 @@ public class MinimapView extends View {
         drawText(c, fitText(mode + "  " + status, r.width() - 260 * u, 2.2f * u),
                 r.left + 24 * u, r.top + 94 * u, 2.2f * u);
         String game = model.gameTitle.length() == 0 ? "NO VERIFIED GAME" :
-                model.gameTitle + "  #" + model.gameId;
+                raText(model.gameTitle) + "  #" + model.gameId;
         drawText(c, fitText(game, r.width() - 48 * u, 2.6f * u),
                 r.left + 24 * u, r.top + 126 * u, 2.6f * u);
-        String user = model.username.length() == 0 ? "USER: --" : "USER: " + model.username;
+        String user = model.username.length() == 0 ? "USER: --" : "USER: " + raText(model.username);
         String summary = user + "    " + model.unlocked + "/" + model.core + " CORE    RP " + model.rp;
         drawText(c, fitText(summary, r.width() - 48 * u, 2.1f * u),
                 r.left + 24 * u, r.top + 158 * u, 2.1f * u);
         String presence = model.richPresence.length() == 0 ? "RICH PRESENCE: --" :
-                "RICH PRESENCE: " + model.richPresence;
+                "RICH PRESENCE: " + raText(model.richPresence);
         drawText(c, fitText(presence, r.width() - 48 * u, 1.9f * u),
                 r.left + 24 * u, r.top + 188 * u, 1.9f * u);
         String event = model.lastEvent.length() == 0 ? "LAST EVENT: --" :
-                "LAST EVENT: " + model.lastEvent;
+                "LAST EVENT: " + raText(model.lastEvent);
         drawText(c, fitText(event, r.width() - 48 * u, 1.9f * u),
                 r.left + 24 * u, r.top + 215 * u, 1.9f * u);
 
@@ -1239,16 +1240,18 @@ public class MinimapView extends View {
                 drawText(c, points, r.right - 24 * u - textWidth(points, 1.8f * u),
                         y + 6 * u, 1.8f * u);
                 float textY = y + 4 * u;
-                for (String title : wrapRaText(achievement.title, r.width() - 220 * u, 2.1f * u, 2)) {
+                for (String title : wrapRaText(raText(achievement.title),
+                        r.width() - 220 * u, 2.1f * u, 2)) {
                     drawText(c, title, r.left + 24 * u, textY, 2.1f * u);
                     textY += 20 * u;
                 }
-                for (String description : wrapRaText(achievement.description, r.width() - 48 * u, 1.7f * u, 2)) {
+                for (String description : wrapRaText(raText(achievement.description),
+                        r.width() - 48 * u, 1.7f * u, 2)) {
                     drawText(c, description, r.left + 24 * u, textY, 1.7f * u);
                     textY += 18 * u;
                 }
                 if (achievement.progress.length() > 0) {
-                    String progress = "PROGRESS: " + achievement.progress;
+                    String progress = "PROGRESS: " + raText(achievement.progress);
                     drawText(c, fitText(progress, r.width() - 48 * u, 1.6f * u),
                             r.left + 24 * u, textY, 1.6f * u);
                 }
@@ -1263,9 +1266,15 @@ public class MinimapView extends View {
     }
 
     private float raAchievementHeight(RetroAchievementsUiModel.Achievement achievement, RectF r) {
-        return 12 * u + wrapRaText(achievement.title, r.width() - 220 * u, 2.1f * u, 2).size() * 20 * u
-                + wrapRaText(achievement.description, r.width() - 48 * u, 1.7f * u, 2).size() * 18 * u
+        return 12 * u + wrapRaText(raText(achievement.title),
+                r.width() - 220 * u, 2.1f * u, 2).size() * 20 * u
+                + wrapRaText(raText(achievement.description),
+                r.width() - 48 * u, 1.7f * u, 2).size() * 18 * u
                 + (achievement.progress.length() == 0 ? 0 : 18 * u);
+    }
+
+    private String raText(String text) {
+        return text.toUpperCase(Locale.US);
     }
 
     private List<String> wrapRaText(String text, float maxWidth, float size, int maxLines) {

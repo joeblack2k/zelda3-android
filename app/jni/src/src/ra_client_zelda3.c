@@ -445,11 +445,13 @@ static void RaClientZelda3_UpdateUiModel(void) {
   rc_client_achievement_list_t *list = NULL;
   char rich_presence[2048] = "";
   RaClientZelda3UiWriter writer = { g_ui_build, sizeof(g_ui_build), 0 };
+  size_t record_start = 0;
   uint32_t i;
   int disconnected = 0;
   const char *mode = "disabled";
   const char *status;
 
+  g_ui_build[0] = '\0';
   if (g_config.enabled)
     mode = g_config.spectator ? "spectator" : "casual";
   if (!g_config.verified)
@@ -478,14 +480,15 @@ static void RaClientZelda3_UpdateUiModel(void) {
   }
 #define RA_UI_FIELD(text) \
   do { if (!RaClientZelda3_AppendUiText(&writer, text) || \
-           !RaClientZelda3_AppendUiChar(&writer, '\t')) goto done; } while (0)
+           !RaClientZelda3_AppendUiChar(&writer, '\t')) goto rollback; } while (0)
 #define RA_UI_NUMBER(value) \
   do { if (!RaClientZelda3_AppendUiUnsigned(&writer, value) || \
-           !RaClientZelda3_AppendUiChar(&writer, '\t')) goto done; } while (0)
+           !RaClientZelda3_AppendUiChar(&writer, '\t')) goto rollback; } while (0)
   RA_UI_FIELD("V");
   if (!RaClientZelda3_AppendUiUnsigned(&writer, 1) ||
       !RaClientZelda3_AppendUiChar(&writer, '\n') ||
-      !RaClientZelda3_AppendUiText(&writer, "M\t")) goto done;
+      !RaClientZelda3_AppendUiChar(&writer, 'M') ||
+      !RaClientZelda3_AppendUiChar(&writer, '\t')) goto rollback;
   RA_UI_FIELD(mode);
   RA_UI_FIELD(status);
   RA_UI_FIELD(user ? (user->display_name ? user->display_name : user->username) : NULL);
@@ -500,7 +503,7 @@ static void RaClientZelda3_UpdateUiModel(void) {
   RA_UI_NUMBER(disconnected);
   RA_UI_NUMBER(0);
   if (!RaClientZelda3_AppendUiUnsigned(&writer, g_config.spectator) ||
-      !RaClientZelda3_AppendUiChar(&writer, '\n')) goto done;
+      !RaClientZelda3_AppendUiChar(&writer, '\n')) goto rollback;
 
   if (g_client && g_game_valid) {
     list = rc_client_create_achievement_list(
@@ -513,7 +516,9 @@ static void RaClientZelda3_UpdateUiModel(void) {
       uint32_t j;
       for (j = 0; j < bucket->num_achievements; ++j) {
         const rc_client_achievement_t *achievement = bucket->achievements[j];
-        if (!RaClientZelda3_AppendUiText(&writer, "A\t")) goto done;
+        record_start = writer.offset;
+        if (!RaClientZelda3_AppendUiChar(&writer, 'A') ||
+            !RaClientZelda3_AppendUiChar(&writer, '\t')) goto rollback;
         RA_UI_FIELD(bucket->label);
         RA_UI_NUMBER(achievement->id);
         RA_UI_FIELD(achievement->title);
@@ -521,10 +526,14 @@ static void RaClientZelda3_UpdateUiModel(void) {
         RA_UI_NUMBER(achievement->points);
         RA_UI_NUMBER(achievement->state == RC_CLIENT_ACHIEVEMENT_STATE_UNLOCKED);
         if (!RaClientZelda3_AppendUiText(&writer, achievement->measured_progress) ||
-            !RaClientZelda3_AppendUiChar(&writer, '\n')) goto done;
+            !RaClientZelda3_AppendUiChar(&writer, '\n')) goto rollback;
       }
     }
   }
+  goto done;
+rollback:
+  writer.offset = record_start;
+  writer.buffer[record_start] = '\0';
 done:
 #undef RA_UI_FIELD
 #undef RA_UI_NUMBER

@@ -40,10 +40,14 @@ grep -q 'EXTRA_REFRESH_RETROACHIEVEMENTS' "$root/app/src/main/java/com/dishii/ze
 grep -q 'protected void onNewIntent(Intent intent)' "$root/app/src/main/java/com/dishii/zelda3/MainActivity.java"
 grep -q 'RECEIVER_EXPORTED' "$root/app/src/main/java/com/dishii/zelda3/MainActivity.java"
 grep -q 'x >= raListLeft && x <= raListRight' "$root/app/src/main/java/com/dishii/zelda3/MinimapView.java"
+grep -Fq "writer.buffer[record_start] = '\\0';" "$client"
+grep -Fq "RaClientZelda3_AppendUiChar(&writer, 'M')" "$client"
+grep -Fq "RaClientZelda3_AppendUiChar(&writer, 'A')" "$client"
+grep -q 'JniNewStringFromUtf8' "$jni"
 
 tmp=${TMPDIR:-/tmp}/zelda3-ra-state-$$
 trap 'rm -f "$tmp"' EXIT
 cc -std=c99 -Wall -Werror -I"$root/app/jni/src/src" "$state_test" "$state" -o "$tmp"
 "$tmp"
 
-printf '%s\n' 'RA native static assertions passed: 12'
+printf '%s\n' 'RA native static assertions passed: 16'
