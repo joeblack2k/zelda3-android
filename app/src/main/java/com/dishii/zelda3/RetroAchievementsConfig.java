@@ -1,0 +1,146 @@
+package com.dishii.zelda3;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
+import java.util.Locale;
+
+/** Parses the optional external RetroAchievements configuration file. */
+final class RetroAchievementsConfig {
+
+    enum Mode {
+        DISABLED, SPECTATOR, CASUAL
+    }
+
+    static final String FILE_NAME = "retroachievements.ini";
+    static final String DEFAULT_CLIENT_NAME = "Zelda3Android";
+    static final String DEFAULT_CLIENT_VERSION = "2.0";
+
+    final boolean enabled;
+    final Mode mode;
+    final String username;
+    final String password;
+    final String token;
+    final String clientName;
+    final String clientVersion;
+
+    private RetroAchievementsConfig(boolean enabled, Mode mode, String username, String password,
+            String token, String clientName, String clientVersion) {
+        this.enabled = enabled;
+        this.mode = mode;
+        this.username = username;
+        this.password = password;
+        this.token = token;
+        this.clientName = clientName;
+        this.clientVersion = clientVersion;
+    }
+
+    static RetroAchievementsConfig load(File file) throws IOException {
+        String enabled = null, mode = null, username = null, password = null, token = null;
+        String clientName = null, clientVersion = null;
+        if (file.isFile()) {
+            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String trimmed = line.trim();
+                    if (trimmed.length() == 0 || trimmed.startsWith("#") || trimmed.startsWith(";")) {
+                        continue;
+                    }
+                    int equals = trimmed.indexOf('=');
+                    if (equals < 1) {
+                        continue;
+                    }
+                    String key = trimmed.substring(0, equals).trim().toLowerCase(Locale.US);
+                    String value = trimmed.substring(equals + 1).trim();
+                    if ("enabled".equals(key)) enabled = value;
+                    else if ("mode".equals(key)) mode = value;
+                    else if ("username".equals(key)) username = value;
+                    else if ("password".equals(key)) password = value;
+                    else if ("token".equals(key)) token = value;
+                    else if ("clientname".equals(key)) clientName = value;
+                    else if ("clientversion".equals(key)) clientVersion = value;
+                }
+            }
+        }
+
+        String selectedToken = nonEmpty(token);
+        return new RetroAchievementsConfig(parseBoolean(enabled), parseMode(mode),
+                nonEmpty(username), selectedToken == null ? nonEmpty(password) : null, selectedToken,
+                validProductValue(clientName) ? clientName.trim() : DEFAULT_CLIENT_NAME,
+                validProductValue(clientVersion) ? clientVersion.trim() : DEFAULT_CLIENT_VERSION);
+    }
+
+    static void createDefaultIfMissing(File file) throws IOException {
+        if (file.exists()) {
+            return;
+        }
+        File parent = file.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+            throw new IOException("couldn't create RetroAchievements config directory");
+        }
+        try (Writer writer = new OutputStreamWriter(new FileOutputStream(file), "UTF-8")) {
+            writer.write("# Optional RetroAchievements settings\n");
+            writer.write("Enabled = false\n");
+            writer.write("Mode = Spectator\n");
+            writer.write("ClientName = " + DEFAULT_CLIENT_NAME + "\n");
+            writer.write("ClientVersion = " + DEFAULT_CLIENT_VERSION + "\n");
+        }
+    }
+
+    static void clearPasswordAfterNativeHandoff(File file) throws IOException {
+        if (!file.isFile()) {
+            return;
+        }
+        StringBuilder updated = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                int equals = line.indexOf('=');
+                if (equals >= 0 && "password".equalsIgnoreCase(line.substring(0, equals).trim())) {
+                    line = line.substring(0, equals + 1);
+                }
+                updated.append(line).append('\n');
+            }
+        }
+        try (Writer writer = new OutputStreamWriter(new FileOutputStream(file), "UTF-8")) {
+            writer.write(updated.toString());
+        }
+    }
+
+    void persistReturnedToken(RetroAchievementsStorage storage, String returnedToken) {
+        if (returnedToken != null && returnedToken.length() > 0) {
+            storage.saveReturnedToken(returnedToken);
+        }
+    }
+
+    private static boolean parseBoolean(String value) {
+        return "1".equals(value) || "true".equalsIgnoreCase(value) || "yes".equalsIgnoreCase(value);
+    }
+
+    private static Mode parseMode(String value) {
+        if (value != null) {
+            for (Mode mode : Mode.values()) {
+                if (mode.name().equalsIgnoreCase(value.trim())) {
+                    return mode;
+                }
+            }
+        }
+        return Mode.SPECTATOR;
+    }
+
+    private static String nonEmpty(String value) {
+        return value == null || value.trim().length() == 0 ? null : value.trim();
+    }
+
+    private static boolean validProductValue(String value) {
+        if (value == null) {
+            return false;
+        }
+        String trimmed = value.trim();
+        return trimmed.length() > 0 && trimmed.length() <= 64 && trimmed.matches("[A-Za-z0-9][A-Za-z0-9 ._-]*");
+    }
+}

@@ -36,3 +36,9 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Local RetroAchievements credentials and ROM fixtures
+test-secrets/
+**/retroachievements.ini
+*.sfc
+*.smc
