@@ -15,8 +15,9 @@ the tag, commit, source repository, and license.
 - `app/jni/src/Makefile`: `RCHEEVOS_CLIENT_SRCS` mirrors that same source
   set and adds the public headers, so the existing Linux executable still
   links with the vendored client.
-- `app/build.gradle`: Android Gradle Plugin 7.0.3 is pinned to NDK
-  `25.2.9519653` and builds `arm64-v8a`.
+- `app/build.gradle`: keeps the upstream ABI declarations unchanged. The
+  Apple-silicon validation command injects `arm64-v8a` and uses local NDK
+  `25.2.9519653`; this target-only host workaround is not a product constraint.
 - `app/jni/src/src/ra_client_zelda3.*`, `ra_memory.*`, `ra_http.*`, and
   `ra_state.*`: future integration boundaries. They are compiled but have
   no callers, no network implementation, no login, no frame hook, no UI,
@@ -31,9 +32,10 @@ adapter.
 
 ## Toolchain and ABI
 
-The verified target is `arm64-v8a` using NDK `25.2.9519653`, matching the
-Apple-silicon Android build environment. Gradle debug builds no longer
-package the prior `armeabi-v7a`, `x86`, or `x86_64` variants. `Application.mk`
-keeps its legacy ABI list for direct/manual ndk-build users; restoring
-multi-ABI Gradle packages requires validating those ABIs with this vendored
-source set before expanding `abiFilters`.
+The verified target is `arm64-v8a` using local NDK `25.2.9519653`, matching the
+AYN Thor and Apple-silicon Android build environment. The project continues to
+declare `armeabi-v7a`, `arm64-v8a`, `x86`, and `x86_64`. NDK r21 cannot run
+reliably on this arm64 macOS host even through Rosetta, while newer NDKs no
+longer support the declared API 16 for all legacy ABIs. Target builds therefore
+use `-Pandroid.injected.build.abi=arm64-v8a`; multi-ABI release validation still
+requires a compatible Intel/Linux Android build host.
