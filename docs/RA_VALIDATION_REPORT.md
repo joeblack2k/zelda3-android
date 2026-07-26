@@ -2,6 +2,8 @@
 
 Date: July 25, 2026
 
+Casual unlock follow-up: July 26, 2026
+
 ## Scope
 
 This draft integrates private RetroAchievements support into the Android port
@@ -128,10 +130,27 @@ Additional physical checks:
 | Save-state progress footer | Passed: `ZRAP` footer present in the generated save |
 | Save-state restore | Passed: runtime logged `progress restore=ok` |
 | Setup re-verification through `onNewIntent` | Passed: current activity reauthenticated game 355 |
+| Natural Casual achievement unlock | Passed: `Fighter` (ID 944) triggered and was confirmed by the server |
 | Wi-Fi disable/enable recovery | Partially observed; see limitations |
 
 The turbo test demonstrates that RetroAchievements processing follows logical
 game frames before render skipping, rather than only rendered frames.
+
+The Casual unlock follow-up restored a state immediately before receiving the
+Fighter's Sword and Shield, then advanced the original dialogue through normal
+game input. The live memory transition was:
+
+```text
+scene bytes 0x0AA1..0x0AA4: 01 10 4D 0A
+sword 0xF359: 0 -> 1
+shield 0xF35A: 0 -> 1
+```
+
+rcheevos emitted `RC_CLIENT_EVENT_ACHIEVEMENT_TRIGGERED`, the local unlocked
+count increased from 2 to 3, Rich Presence changed to include
+`Fighter's Sword`, all HTTP requests completed without error, and a separate
+server query confirmed achievement ID 944 in the user's Casual unlock list.
+No memory patch, replay, synthetic unlock, or direct award request was used.
 
 ## Security and Privacy Checks
 
@@ -145,7 +164,7 @@ game frames before render skipping, rather than only rendered frames.
   reactivate the client if cleanup fails. A successful cleanup removes the
   tombstone and permits an intentional later login.
 
-## Known Limitations and Remaining Manual Check
+## Known Limitations
 
 - A deterministic server reconnect event was not produced in spectator mode:
   Wi-Fi was disabled for 120 seconds and restored successfully, but the idle
@@ -153,11 +172,6 @@ game frames before render skipping, rather than only rendered frames.
   valid after Android reported Wi-Fi connected and validated. The asynchronous
   reconnect path is implemented, but a real disconnected/reconnected event was
   not claimed as observed.
-- A natural Casual-mode achievement unlock was deliberately not forced on the
-  private account. Final acceptance should set `Mode=Casual`, start a fresh
-  save, earn one safe early achievement naturally, confirm exactly one unlock
-  event and server-profile update, then return to Spectator. Save-state replay,
-  direct cheats, and synthetic unlocks must not be used for this check.
 - The Apple-silicon validation host can execute the local NDK only for
   `arm64-v8a`. Source-level ABI declarations still preserve all four upstream
   ABIs; a complete multi-ABI release build requires a compatible Intel/Linux
@@ -174,6 +188,6 @@ game frames before render skipping, rather than only rendered frames.
 
 The private Spectator-mode integration is buildable, authenticated, ROM-bound,
 frame-active, save-state-aware, and usable on both physical displays of the
-AYN Thor. Automated checks and the tested runtime path pass. The PR remains a
-draft because the natural Casual unlock and an active-request network reconnect
+AYN Thor. Automated checks, the Spectator runtime path, and one natural Casual
+unlock pass. The PR remains a draft because an active-request network reconnect
 should still be observed before merge.
