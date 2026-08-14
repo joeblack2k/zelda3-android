@@ -28,6 +28,16 @@ public class GameState {
     /** Request equipping the item in grid slot 1..20; applied on the game thread. */
     public static native void equipSlot(int slot);
     public static native void assignSlotX(int slot);
+    private static boolean infiniteHealth = false;
+    private static native void setInfiniteHealthNative(boolean on);
+    /** Runtime-only process-local health toggle; the native request is applied on the game thread. */
+    public static boolean isInfiniteHealth() { return infiniteHealth; }
+    public static void setInfiniteHealth(boolean on) {
+        setInfiniteHealthNative(on);
+        infiniteHealth = on;
+    }
+    public static native void give100Rupees();
+    public static native void give10Bombs();
     /** Toggle the extended aspect ratio at runtime; applied on the game thread. */
     public static native void setWidescreen(boolean on);
     public static native boolean isWidescreen();

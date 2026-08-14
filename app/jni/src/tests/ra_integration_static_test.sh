@@ -6,6 +6,7 @@ main="$root/app/jni/src/src/main.c"
 rtl="$root/app/jni/src/src/zelda_rtl.c"
 jni="$root/app/jni/src/src/platform/android/ra_client_jni.c"
 client="$root/app/jni/src/src/ra_client_zelda3.c"
+second_screen="$root/app/jni/src/src/second_screen.c"
 state="$root/app/jni/src/src/ra_state.c"
 state_test="$root/app/jni/src/tests/ra_state_test.c"
 
@@ -45,9 +46,80 @@ grep -Fq "RaClientZelda3_AppendUiChar(&writer, 'M')" "$client"
 grep -Fq "RaClientZelda3_AppendUiChar(&writer, 'A')" "$client"
 grep -q 'JniNewStringFromUtf8' "$jni"
 
+# M1 cheat-taint and game-thread action invariants.
+awk '
+  /void RaClientZelda3_TaintForCheat\(void\)/ { inside = 1; next }
+  inside && /RaClientZelda3_DestroyClient\(\);/ { destroyed = NR }
+  inside && /RaClientZelda3_ClearConfig\(&g_config\);/ { current = NR }
+  inside && /RaClientZelda3_ClearConfig\(&g_commands.config\);/ { pending = NR }
+  inside && /^}/ { inside = 0 }
+  END { exit !(destroyed && current && pending && destroyed < current && current < pending) }
+' "$client"
+awk '
+  /RaClientZelda3_TaintForCheat\(\);/ { taint = NR }
+  /link_(health_current|rupees_goal|item_bombs) =/ && NR < taint { bad = 1 }
+  END { exit !(taint && !bad) }
+' "$second_screen"
+awk '
+  /void SecondScreen_RunFrameHook\(void\)/ { in_hook = 1 }
+  in_hook {
+    line = $0
+    opens = gsub(/\{/, "", line)
+    closes = gsub(/\}/, "", line)
+    if (/bool in_gameplay = .*submodule_index == 0;/) gameplay = NR
+    if (gameplay && !grant && /if \(in_gameplay && .*give100_rupees.*give10_bombs.*\{/) {
+      grant = NR
+      grant_depth = depth + 1
+    }
+    if (/g_pending_give100_rupees = 0;/) {
+      clear100_count++
+      clear100 = NR
+      if (!grant || grant_end || depth < grant_depth || !give100_depth || depth < give100_depth)
+        bad = 1
+    }
+    if (/g_pending_give10_bombs = 0;/) {
+      clear10_count++
+      clear10 = NR
+      if (!grant || grant_end || depth < grant_depth || !give10_depth || depth < give10_depth)
+        bad = 1
+    }
+    if (grant && !grant_end && depth >= grant_depth) {
+      if (/if \(give100_rupees\) \{/)
+        give100_depth = depth + 1
+      if (/if \(give10_bombs\) \{/)
+        give10_depth = depth + 1
+      if (/link_rupees_goal =/) {
+        if (!clear100 || NR <= clear100) bad = 1
+        else write100 = NR
+      }
+      if (/link_item_bombs =/) {
+        if (!clear10 || NR <= clear10) bad = 1
+        else write10 = NR
+      }
+      if (depth == grant_depth && closes > opens) grant_end = NR
+    }
+    depth += opens - closes
+  }
+  END {
+    exit !(gameplay && grant && grant_end &&
+           clear100_count == 1 && clear10_count == 1 &&
+           clear100 > grant && clear10 > grant &&
+           clear100 < grant_end && clear10 < grant_end &&
+           write100 > clear100 && write10 > clear10 && !bad)
+  }
+' "$second_screen"
+awk '
+  /void RaClientZelda3_QueueConfigure\(/ { inside = 1 }
+  inside && /if \(g_cheat_tainted\)/ { veto = NR }
+  inside && /RaClientZelda3_CopyConfig\(/ { copy = NR }
+  inside && /^}/ { inside = 0 }
+  END { exit !(veto && copy && veto < copy) }
+' "$client"
+grep -q 'if (!g_cheat_tainted && !g_paused && g_client)' "$client"
+
 tmp=${TMPDIR:-/tmp}/zelda3-ra-state-$$
 trap 'rm -f "$tmp"' EXIT
 cc -std=c99 -Wall -Werror -I"$root/app/jni/src/src" "$state_test" "$state" -o "$tmp"
 "$tmp"
 
-printf '%s\n' 'RA native static assertions passed: 16'
+printf '%s\n' 'RA native static assertions passed: 20'

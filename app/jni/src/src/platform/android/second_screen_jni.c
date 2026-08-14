@@ -21,6 +21,7 @@ bool SS_GetIndoorExit(int *out);
 void SS_SaveLoadState(bool save); void SS_SetAutosave(bool on);
 void SS_RequestSaveState(int slot); void SS_RequestLoadState(int slot);
 bool SS_TakeThumbnail(uint32 *out);
+void SS_SetInfiniteHealth(bool on); void SS_Give100Rupees(void); void SS_Give10Bombs(void);
 
 #include <jni.h>
 
@@ -108,6 +109,9 @@ JNIEXPORT jint JNICALL Java_com_dishii_zelda3_GameState_getDungeonLayout(JNIEnv 
 
 JNIEXPORT void JNICALL Java_com_dishii_zelda3_GameState_equipSlot(JNIEnv *env, jclass clazz, jint slot) { SS_EquipSlot(slot); }
 JNIEXPORT void JNICALL Java_com_dishii_zelda3_GameState_assignSlotX(JNIEnv *env, jclass clazz, jint slot) { SS_AssignSlotX(slot); }
+JNIEXPORT void JNICALL Java_com_dishii_zelda3_GameState_setInfiniteHealthNative(JNIEnv *env, jclass clazz, jboolean on) { SS_SetInfiniteHealth(on); }
+JNIEXPORT void JNICALL Java_com_dishii_zelda3_GameState_give100Rupees(JNIEnv *env, jclass clazz) { SS_Give100Rupees(); }
+JNIEXPORT void JNICALL Java_com_dishii_zelda3_GameState_give10Bombs(JNIEnv *env, jclass clazz) { SS_Give10Bombs(); }
 JNIEXPORT void JNICALL Java_com_dishii_zelda3_GameState_setWidescreen(JNIEnv *env, jclass clazz, jboolean on) { SS_SetWidescreen(on); }
 JNIEXPORT jboolean JNICALL Java_com_dishii_zelda3_GameState_isWidescreen(JNIEnv *env, jclass clazz) { return SS_IsWidescreen(); }
 JNIEXPORT void JNICALL Java_com_dishii_zelda3_GameState_setCrtFilter(JNIEnv *env, jclass clazz, jboolean on) { SS_SetCrtFilter(on); }

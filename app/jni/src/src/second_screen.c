@@ -15,6 +15,7 @@
 #include "zelda_rtl.h"
 #include "snes/ppu.h"
 #include "second_screen_tables.h"
+#include "ra_client_zelda3.h"
 
 // Save-state thumbnail size, in the 8:7 shape of the 256x224 SNES picture.
 // The JNI/Java sides hardcode the same numbers (as the other render_* do).
@@ -421,6 +422,13 @@ bool SS_RenderMapIcons(int palace, uint32 *px) {
 
 // ============ actions (UI thread -> game thread) ============
 
+enum {
+  kSsGiveRupees = 100,
+  kSsGiveBombs = 10,
+  kSsMaxHealth = 0xa0,
+  kSsMaxBombUpgrade = 7,
+};
+
 // Requested from the UI thread; applied on the game thread at frame start.
 static volatile int g_pending_equip_slot;
 static volatile int g_pending_assign_x_slot;
@@ -435,6 +443,11 @@ static volatile int g_pending_state_cmd = -1;
 static volatile int g_pending_state_slot;
 // kFeatures0_* bits to set/clear; ZeldaRunFrame latches the result into game ram.
 static volatile uint32 g_pending_features_on, g_pending_features_off;
+static volatile int g_pending_infinite_health = -1;
+static volatile int g_pending_give100_rupees;
+static volatile int g_pending_give10_bombs;
+// Runtime-only: this flag is deliberately not part of save/config state.
+static bool g_ss_infinite_health;
 // Redraw the top HUD once the changed feature bits have reached game ram.
 static bool g_ss_hud_refresh;
 
@@ -452,6 +465,12 @@ void SS_AssignSlotX(int slot) {
   if (slot >= 1 && slot <= 20)
     g_pending_assign_x_slot = slot;
 }
+
+void SS_SetInfiniteHealth(bool on) { g_pending_infinite_health = on ? 1 : 0; }
+
+void SS_Give100Rupees(void) { g_pending_give100_rupees = 1; }
+
+void SS_Give10Bombs(void) { g_pending_give10_bombs = 1; }
 
 void SS_SetWidescreen(bool on) { g_pending_widescreen = on ? 1 : 0; }
 
@@ -571,6 +590,21 @@ void SS_SetGamepadControls(const int *in) {
   g_pending_controls_set = 1;
 }
 
+static uint16 SS_MaxRupees(void) {
+  return enhanced_features0 & kFeatures0_CarryMoreRupees ? 9999 : 999;
+}
+
+static uint8 SS_MaxHealth(void) {
+  return link_health_capacity > kSsMaxHealth ? kSsMaxHealth : link_health_capacity;
+}
+
+static uint8 SS_MaxBombs(void) {
+  uint8 upgrade = link_bomb_upgrades;
+  if (upgrade > kSsMaxBombUpgrade)
+    upgrade = kSsMaxBombUpgrade;
+  return kMaxBombsForLevel[upgrade];
+}
+
 // Called from the main loop right before ZeldaRunFrame (game thread).
 void SecondScreen_RunFrameHook(void) {
   // Track where Link last stood on the real overworld (for SS_GetIndoorExit).
@@ -645,6 +679,37 @@ void SecondScreen_RunFrameHook(void) {
     if (!g_ss_hide_hud && (main_module_index == 7 || main_module_index == 9 || main_module_index == 14))
       Hud_Rebuild();
   }
+  int infinite_health = g_pending_infinite_health;
+  if (infinite_health >= 0) {
+    g_pending_infinite_health = -1;
+    g_ss_infinite_health = infinite_health != 0;
+  }
+  // Only during normal overworld/dungeon gameplay, not in menus or cutscenes.
+  bool in_gameplay = (main_module_index == 7 || main_module_index == 9) && submodule_index == 0;
+  int give100_rupees = g_pending_give100_rupees;
+  int give10_bombs = g_pending_give10_bombs;
+  if (in_gameplay && (g_ss_infinite_health || give100_rupees || give10_bombs)) {
+    RaClientZelda3_TaintForCheat();
+    if (g_ss_infinite_health) {
+      uint8 max_health = SS_MaxHealth();
+      if (link_health_current != max_health)
+        link_health_current = max_health;
+    }
+    if (give100_rupees) {
+      g_pending_give100_rupees = 0;
+      uint16 max_rupees = SS_MaxRupees();
+      uint16 current = link_rupees_goal > link_rupees_actual ?
+          link_rupees_goal : link_rupees_actual;
+      uint32 next = (uint32)current + kSsGiveRupees;
+      link_rupees_goal = next > max_rupees ? max_rupees : (uint16)next;
+    }
+    if (give10_bombs) {
+      g_pending_give10_bombs = 0;
+      uint8 max_bombs = SS_MaxBombs();
+      uint16 next = (uint16)link_item_bombs + kSsGiveBombs;
+      link_item_bombs = next > max_bombs ? max_bombs : (uint8)next;
+    }
+  }
   int sl = g_pending_saveload;
   if (sl) {
     g_pending_saveload = 0;
@@ -653,8 +718,6 @@ void SecondScreen_RunFrameHook(void) {
     SaveLoadSlot(sl == 1 ? kSaveLoad_Save : kSaveLoad_Load, 1);
     ZeldaApuUnlock();
   }
-  // Only during normal overworld/dungeon gameplay, not in menus or cutscenes.
-  bool in_gameplay = (main_module_index == 7 || main_module_index == 9) && submodule_index == 0;
   int slot = g_pending_equip_slot;
   if (slot) {
     g_pending_equip_slot = 0;

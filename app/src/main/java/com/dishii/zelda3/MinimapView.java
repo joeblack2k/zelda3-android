@@ -149,7 +149,9 @@ public class MinimapView extends View {
     private final RectF tabItemsR = new RectF(), tabGearR = new RectF(), tabMapR = new RectF();
     private final RectF tabSettingsR = new RectF(), remapBackR = new RectF();
     private final RectF raBackR = new RectF(), raLogoutR = new RectF(), raVerifyR = new RectF();
-    private final RectF[] settingsRowR = new RectF[13 + FEAT_MASKS.length];
+    private final RectF cheatsBackR = new RectF(), cheatsHealthR = new RectF();
+    private final RectF cheatsRupeesR = new RectF(), cheatsBombsR = new RectF();
+    private final RectF[] settingsRowR = new RectF[14 + FEAT_MASKS.length];
     private final RectF[] remapRowR = new RectF[12];
     private final RectF mapAreaR = new RectF(), yRingR = new RectF(), xRingR = new RectF();
 
@@ -160,6 +162,7 @@ public class MinimapView extends View {
     private float settingsTouchStartY, settingsTouchLastY;
     private boolean remapMode = false;
     private boolean raMode = false;
+    private boolean cheatsMode = false;
     private float raScroll, raMaxScroll, raListTop, raListBot;
     private boolean raTouch, raScrolling;
     private float raTouchStartY, raTouchLastY;
@@ -183,6 +186,8 @@ public class MinimapView extends View {
     private int settingsFlashRow = -1;
     private long settingsFlashUntil;
     private String settingsFlash = "";
+    private long cheatsFlashUntil;
+    private String cheatsFlash = "";
     // MSU-1 audio packs; the emulator only reads EnableMSU at startup, so this
     // one also waits for a restart. msuOnValue keeps whichever flavour the ini
     // had (true/deluxe/opuz/deluxe-opuz) so turning it back on restores it.
@@ -993,6 +998,10 @@ public class MinimapView extends View {
             drawRaPanel(c, r);
             return;
         }
+        if (cheatsMode) {
+            drawCheatsPanel(c, r);
+            return;
+        }
         drawText(c, "SETTINGS", r.centerX() - textWidth("SETTINGS", 3 * u) / 2, r.top + 18 * u, 3 * u);
 
         boolean ws = false, crt = false, hudHidden = false;
@@ -1043,14 +1052,15 @@ public class MinimapView extends View {
                         : msuOn != msuOnApplied ? "RESTART" : (msuOn ? "ON" : "OFF");
             }
             else if (i == 12) { label = "RETROACHIEVEMENTS"; v = null; }
+            else if (i == 13) { label = "CHEATS"; v = null; }
             else {
-                int f = i - 13;
+                int f = i - 14;
                 label = FEAT_LABELS[f];
                 v = (((feats & FEAT_MASKS[f]) != 0) ^ FEAT_INVERT[f]) ? "ON" : "OFF";
             }
             drawText(c, label, row.left + 22 * u, ty, 3 * u);
             if (v == null) {
-                // chevron for the remap sub-screen
+                // chevron for a sub-screen
                 aa.setStyle(Paint.Style.STROKE); aa.setStrokeWidth(5 * u); aa.setColor(COL_GOLD);
                 float ax = row.right - 40 * u, ay = row.centerY();
                 c.drawLine(ax - 8 * u, ay - 12 * u, ax + 6 * u, ay, aa);
@@ -1144,8 +1154,12 @@ public class MinimapView extends View {
             } else if (i == 12) {
                 raMode = true;
                 raModelAt = 0;
+            } else if (i == 13) {
+                cheatsMode = true;
+                cheatsFlash = "";
+                cheatsFlashUntil = 0;
             } else {
-                int f = i - 13;
+                int f = i - 14;
                 boolean on = (GameState.getFeatures() & FEAT_MASKS[f]) == 0;
                 GameState.setFeature(FEAT_MASKS[f], on);
                 updateIni(FEAT_SECTIONS[f], FEAT_KEYS[f], on ? "1" : "0");
@@ -1159,6 +1173,48 @@ public class MinimapView extends View {
             }
             return;
         }
+    }
+
+    private void drawCheatRow(Canvas c, RectF row, String label, String value, boolean active) {
+        fill.setColor(active ? Color.rgb(58, 48, 12) : Color.rgb(28, 28, 28));
+        c.drawRoundRect(row, 8 * u, 8 * u, fill);
+        stroke.setStrokeWidth(3 * u);
+        stroke.setColor(active ? COL_GOLD : COL_GOLD_DARK);
+        c.drawRoundRect(row, 8 * u, 8 * u, stroke);
+        float ty = row.centerY() - 12 * u;
+        float valueSize = 2.6f * u;
+        String fitted = fitText(label, row.width() - 140 * u, 2.6f * u);
+        drawText(c, fitted, row.left + 20 * u, ty, 2.6f * u);
+        drawText(c, value, row.right - 20 * u - textWidth(value, valueSize), ty, valueSize);
+    }
+
+    private void drawCheatsPanel(Canvas c, RectF r) {
+        drawText(c, "CHEATS", r.centerX() - textWidth("CHEATS", 3 * u) / 2,
+                r.top + 18 * u, 3 * u);
+        cheatsBackR.set(r.left + 20 * u, r.top + 12 * u, r.left + 110 * u, r.top + 50 * u);
+        drawRaAction(c, cheatsBackR, "BACK", false);
+
+        float rowH = 66 * u, gap = 14 * u;
+        float left = r.left + 24 * u, right = r.right - 24 * u;
+        float y = r.top + 78 * u;
+        boolean infiniteHealth = GameState.isInfiniteHealth();
+        cheatsHealthR.set(left, y, right, y + rowH);
+        drawCheatRow(c, cheatsHealthR, "INFINITE HEALTH",
+                infiniteHealth ? "ON" : "OFF", infiniteHealth);
+        y += rowH + gap;
+        cheatsRupeesR.set(left, y, right, y + rowH);
+        drawCheatRow(c, cheatsRupeesR, "GIVE 100 RUPEES", "TAP", false);
+        y += rowH + gap;
+        cheatsBombsR.set(left, y, right, y + rowH);
+        drawCheatRow(c, cheatsBombsR, "GIVE 10 BOMBS", "TAP", false);
+
+        long now = System.nanoTime();
+        if (now < cheatsFlashUntil) {
+            drawText(c, fitText(cheatsFlash, r.width() - 48 * u, 2.2f * u),
+                    left, r.top + 334 * u, 2.2f * u);
+        }
+        drawText(c, fitText("RA SAFETY: CHEATS TAINT AND DISABLE RA THIS RUN",
+                r.width() - 48 * u, 1.8f * u), left, r.top + 382 * u, 1.8f * u);
     }
 
     private void drawRaPanel(Canvas c, RectF r) {
@@ -2246,6 +2302,27 @@ public class MinimapView extends View {
                         return true;
                     }
                 }
+            } else if (cheatsMode) {
+                if (cheatsBackR.contains(x, y)) { leaveSubPanel(); return true; }
+                if (cheatsHealthR.contains(x, y) && !nativeBroken) {
+                    boolean on = !GameState.isInfiniteHealth();
+                    GameState.setInfiniteHealth(on);
+                    cheatsFlash = on ? "INFINITE HEALTH ON" : "INFINITE HEALTH OFF";
+                    cheatsFlashUntil = System.nanoTime() + 1_200_000_000L;
+                    return true;
+                }
+                if (cheatsRupeesR.contains(x, y) && !nativeBroken) {
+                    GameState.give100Rupees();
+                    cheatsFlash = "GAVE 100 RUPEES";
+                    cheatsFlashUntil = System.nanoTime() + 1_200_000_000L;
+                    return true;
+                }
+                if (cheatsBombsR.contains(x, y) && !nativeBroken) {
+                    GameState.give10Bombs();
+                    cheatsFlash = "GAVE 10 BOMBS";
+                    cheatsFlashUntil = System.nanoTime() + 1_200_000_000L;
+                    return true;
+                }
             } else if (raMode) {
                 if (raBackR.contains(x, y)) { leaveSubPanel(); return true; }
                 if (!raVerifyR.isEmpty() && raVerifyR.contains(x, y)) {
@@ -2347,6 +2424,7 @@ public class MinimapView extends View {
         remapMode = false;
         statesMode = false;
         raMode = false;
+        cheatsMode = false;
         statesTouch = false;
         statesScroll = 0;
         raTouch = false;
