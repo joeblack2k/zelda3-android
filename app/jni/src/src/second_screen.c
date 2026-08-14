@@ -15,7 +15,6 @@
 #include "zelda_rtl.h"
 #include "snes/ppu.h"
 #include "second_screen_tables.h"
-#include "ra_client_zelda3.h"
 
 // Save-state thumbnail size, in the 8:7 shape of the 256x224 SNES picture.
 // The JNI/Java sides hardcode the same numbers (as the other render_* do).
@@ -689,7 +688,6 @@ void SecondScreen_RunFrameHook(void) {
   int give100_rupees = g_pending_give100_rupees;
   int give10_bombs = g_pending_give10_bombs;
   if (in_gameplay && (g_ss_infinite_health || give100_rupees || give10_bombs)) {
-    RaClientZelda3_TaintForCheat();
     if (g_ss_infinite_health) {
       uint8 max_health = SS_MaxHealth();
       if (link_health_current != max_health)

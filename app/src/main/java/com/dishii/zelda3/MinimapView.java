@@ -1213,8 +1213,6 @@ public class MinimapView extends View {
             drawText(c, fitText(cheatsFlash, r.width() - 48 * u, 2.2f * u),
                     left, r.top + 334 * u, 2.2f * u);
         }
-        drawText(c, fitText("RA SAFETY: CHEATS TAINT AND DISABLE RA THIS RUN",
-                r.width() - 48 * u, 1.8f * u), left, r.top + 382 * u, 1.8f * u);
     }
 
     private void drawRaPanel(Canvas c, RectF r) {

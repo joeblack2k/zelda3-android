@@ -50,7 +50,6 @@ static RaClientZelda3Commands g_commands;
 static SDL_mutex *g_command_mutex;
 static SDL_SpinLock g_command_init_lock;
 static rc_client_t *g_client;
-static int g_cheat_tainted;
 static int g_authenticated;
 static int g_game_valid;
 static int g_unsupported_game;
@@ -297,8 +296,6 @@ static void RC_CCONV RaClientZelda3_OnGameLoaded(int result,
 
   (void)error_message;
   (void)userdata;
-  if (g_cheat_tainted)
-    return;
   g_game_result = result;
   if (result != RC_OK || !client) {
     g_unsupported_game = 1;
@@ -327,8 +324,6 @@ static void RC_CCONV RaClientZelda3_OnLogin(int result,
 
   (void)error_message;
   (void)userdata;
-  if (g_cheat_tainted)
-    return;
   g_login_result = result;
   if (result != RC_OK || !client) {
     RaClientZelda3_LogResult("login", result);
@@ -415,7 +410,7 @@ static void RaClientZelda3_ClearPendingProgress(void) {
 static void RaClientZelda3_InitializeClient(void) {
   char clause[96];
 
-  if (g_cheat_tainted || !g_config.enabled || g_client)
+  if (!g_config.enabled || g_client)
     return;
   RaHttpInitialize();
   g_client = rc_client_create(RaMemoryRead, RaHttpDispatch);
@@ -459,9 +454,7 @@ static void RaClientZelda3_UpdateUiModel(void) {
   g_ui_build[0] = '\0';
   if (g_config.enabled)
     mode = g_config.spectator ? "spectator" : "casual";
-  if (g_cheat_tainted)
-    status = "cheat_tainted";
-  else if (!g_config.verified)
+  if (!g_config.verified)
     status = "unverified";
   else if (!g_config.enabled)
     status = "disabled";
@@ -509,8 +502,7 @@ static void RaClientZelda3_UpdateUiModel(void) {
   RA_UI_FIELD(g_last_event);
   RA_UI_NUMBER(disconnected);
   RA_UI_NUMBER(0);
-  RA_UI_NUMBER(g_config.spectator);
-  if (!RaClientZelda3_AppendUiUnsigned(&writer, g_cheat_tainted) ||
+  if (!RaClientZelda3_AppendUiUnsigned(&writer, g_config.spectator) ||
       !RaClientZelda3_AppendUiChar(&writer, '\n')) goto rollback;
 
   if (g_client && g_game_valid) {
@@ -589,12 +581,12 @@ static void RaClientZelda3_UpdateSnapshot(void) {
   RaHttpGetStats(&http_stats);
   SDL_snprintf(
       snapshot, sizeof(snapshot),
-      "enabled=%u cheat_tainted=%u mode=%s lifecycle=%s state=%d login=%s login_result=%d/%s "
+      "enabled=%u mode=%s lifecycle=%s state=%d login=%s login_result=%d/%s "
       "game_result=%d/%s game=%u console=%u hash=%s expected_hash=%s hardcore=0 "
       "spectator=%u summary=core:%u/unlocked:%u/unsupported:%u rp_supported=%u "
       "rp=%s disconnect=%u reconnect=%u disconnected=%u events=%s last_event=%s "
       "invalid_reads=%u frames=%u http=%u/%u/%u/%u/%u logout=%u ua=%s",
-      g_config.enabled, g_cheat_tainted, g_config.spectator ? "spectator" :
+      g_config.enabled, g_config.spectator ? "spectator" :
       (g_config.enabled ? "casual" : "disabled"), g_paused ? "paused" : "resumed",
       state, g_authenticated ? "authenticated" :
       (g_login_result == 1 ? "pending" : "failed"), g_login_result,
@@ -618,36 +610,6 @@ static void RaClientZelda3_UpdateSnapshot(void) {
     RaClientZelda3_UpdateUiModel();
 }
 
-void RaClientZelda3_TaintForCheat(void) {
-  if (RaClientZelda3_EnsureCommandMutex()) {
-    SDL_LockMutex(g_command_mutex);
-    if (g_cheat_tainted) {
-      SDL_UnlockMutex(g_command_mutex);
-      return;
-    }
-    g_cheat_tainted = 1;
-    SDL_UnlockMutex(g_command_mutex);
-  } else {
-    if (g_cheat_tainted)
-      return;
-    g_cheat_tainted = 1;
-  }
-  RaClientZelda3_DestroyClient();
-  RaClientZelda3_ClearConfig(&g_config);
-  RaClientZelda3_ClearPendingProgress();
-  if (RaClientZelda3_EnsureCommandMutex()) {
-    SDL_LockMutex(g_command_mutex);
-    RaClientZelda3_ClearConfig(&g_commands.config);
-    g_commands.configure_pending = 0;
-    SDL_UnlockMutex(g_command_mutex);
-  } else {
-    RaClientZelda3_ClearConfig(&g_commands.config);
-    g_commands.configure_pending = 0;
-  }
-  RaClientZelda3_ResetRuntimeState();
-  RaClientZelda3_UpdateSnapshot();
-}
-
 void RaClientZelda3_QueueConfigure(int enabled, int spectator, int verified,
                                    const char *client_name,
                                    const char *client_version,
@@ -658,10 +620,6 @@ void RaClientZelda3_QueueConfigure(int enabled, int spectator, int verified,
   if (!RaClientZelda3_EnsureCommandMutex())
     return;
   SDL_LockMutex(g_command_mutex);
-  if (g_cheat_tainted) {
-    SDL_UnlockMutex(g_command_mutex);
-    return;
-  }
   RaClientZelda3_CopyConfig(&g_commands.config, enabled, spectator, verified,
                             client_name,
                             client_version, username, secret, secret_is_token,
@@ -696,11 +654,6 @@ void RaClientZelda3_Pump(void) {
   int logout_pending = 0;
   int paused = g_paused;
   int resumed;
-
-  if (g_cheat_tainted) {
-    RaClientZelda3_UpdateSnapshot();
-    return;
-  }
 
   SDL_memset(&pending_config, 0, sizeof(pending_config));
   if (RaClientZelda3_EnsureCommandMutex()) {
@@ -755,13 +708,13 @@ void RaClientZelda3_Pump(void) {
 }
 
 void RaClientZelda3_Idle(void) {
-  if (!g_cheat_tainted && !g_paused && g_client)
+  if (!g_paused && g_client)
     rc_client_idle(g_client);
   RaClientZelda3_UpdateSnapshot();
 }
 
 void RaClientZelda3_DoFrame(void) {
-  if (!g_cheat_tainted && !g_paused && g_client) {
+  if (!g_paused && g_client) {
     rc_client_do_frame(g_client);
     ++g_frame_count;
   }
@@ -769,7 +722,7 @@ void RaClientZelda3_DoFrame(void) {
 }
 
 void RaClientZelda3_Reset(void) {
-  if (!g_cheat_tainted && !g_paused && g_client)
+  if (!g_paused && g_client)
     rc_client_reset(g_client);
   RaClientZelda3_UpdateSnapshot();
 }
@@ -871,13 +824,10 @@ void RaClientZelda3_Shutdown(void) {
     g_commands.configure_pending = 0;
     g_commands.logout_pending = 0;
     g_commands.paused = 0;
-    SDL_snprintf(g_commands.snapshot, sizeof(g_commands.snapshot),
-                 "enabled=0 lifecycle=shutdown cheat_tainted=%u",
-                 g_cheat_tainted);
-    SDL_snprintf(g_commands.ui_model, sizeof(g_commands.ui_model),
-                 "V\t1\nM\tdisabled\t%s\t\t\t0\t0\t0\t0\t0\t\t\t0\t0\t0\t%u\n",
-                 g_cheat_tainted ? "cheat_tainted" : "disabled",
-                 g_cheat_tainted);
+    SDL_strlcpy(g_commands.snapshot, "enabled=0 lifecycle=shutdown",
+                sizeof(g_commands.snapshot));
+    SDL_strlcpy(g_commands.ui_model, "V\t1\nM\tdisabled\tdisabled\t\t\t0\t0\t0\t0\t0\t\t\t0\t0\t0\n",
+                sizeof(g_commands.ui_model));
     SDL_UnlockMutex(g_command_mutex);
   }
 }

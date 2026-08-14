@@ -11,7 +11,6 @@ void RaClientZelda3_QueueConfigure(int enabled, int spectator, int verified,
                                    int secret_is_token,
                                    const char *android_release,
                                    const char *android_model);
-void RaClientZelda3_TaintForCheat(void);
 void RaClientZelda3_Initialize(void);
 void RaClientZelda3_Pump(void);
 void RaClientZelda3_Idle(void);

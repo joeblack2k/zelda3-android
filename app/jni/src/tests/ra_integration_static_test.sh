@@ -6,6 +6,7 @@ main="$root/app/jni/src/src/main.c"
 rtl="$root/app/jni/src/src/zelda_rtl.c"
 jni="$root/app/jni/src/src/platform/android/ra_client_jni.c"
 client="$root/app/jni/src/src/ra_client_zelda3.c"
+header="$root/app/jni/src/src/ra_client_zelda3.h"
 second_screen="$root/app/jni/src/src/second_screen.c"
 state="$root/app/jni/src/src/ra_state.c"
 state_test="$root/app/jni/src/tests/ra_state_test.c"
@@ -46,20 +47,7 @@ grep -Fq "RaClientZelda3_AppendUiChar(&writer, 'M')" "$client"
 grep -Fq "RaClientZelda3_AppendUiChar(&writer, 'A')" "$client"
 grep -q 'JniNewStringFromUtf8' "$jni"
 
-# M1 cheat-taint and game-thread action invariants.
-awk '
-  /void RaClientZelda3_TaintForCheat\(void\)/ { inside = 1; next }
-  inside && /RaClientZelda3_DestroyClient\(\);/ { destroyed = NR }
-  inside && /RaClientZelda3_ClearConfig\(&g_config\);/ { current = NR }
-  inside && /RaClientZelda3_ClearConfig\(&g_commands.config\);/ { pending = NR }
-  inside && /^}/ { inside = 0 }
-  END { exit !(destroyed && current && pending && destroyed < current && current < pending) }
-' "$client"
-awk '
-  /RaClientZelda3_TaintForCheat\(\);/ { taint = NR }
-  /link_(health_current|rupees_goal|item_bombs) =/ && NR < taint { bad = 1 }
-  END { exit !(taint && !bad) }
-' "$second_screen"
+# Cheat game-thread action invariants.
 awk '
   /void SecondScreen_RunFrameHook\(void\)/ { in_hook = 1 }
   in_hook {
@@ -108,18 +96,13 @@ awk '
            write100 > clear100 && write10 > clear10 && !bad)
   }
 ' "$second_screen"
-awk '
-  /void RaClientZelda3_QueueConfigure\(/ { inside = 1 }
-  inside && /if \(g_cheat_tainted\)/ { veto = NR }
-  inside && /RaClientZelda3_CopyConfig\(/ { copy = NR }
-  inside && /^}/ { inside = 0 }
-  END { exit !(veto && copy && veto < copy) }
-' "$client"
-grep -q 'if (!g_cheat_tainted && !g_paused && g_client)' "$client"
+! grep -Eq 'cheat_tainted|g_cheat_tainted|RaClientZelda3_TaintForCheat' "$client"
+! grep -Eq 'cheat_tainted|g_cheat_tainted|RaClientZelda3_TaintForCheat' "$header"
+! grep -Eq 'cheat_tainted|g_cheat_tainted|RaClientZelda3_TaintForCheat' "$second_screen"
 
 tmp=${TMPDIR:-/tmp}/zelda3-ra-state-$$
 trap 'rm -f "$tmp"' EXIT
 cc -std=c99 -Wall -Werror -I"$root/app/jni/src/src" "$state_test" "$state" -o "$tmp"
 "$tmp"
 
-printf '%s\n' 'RA native static assertions passed: 20'
+printf '%s\n' 'RA native static assertions passed'
