@@ -9,6 +9,7 @@ public final class RetroAchievementsConfigTest {
 
     public static void main(String[] args) throws Exception {
         testHeaderStripAndHash();
+        testDefaultConfigEnablesCasualMode();
         testConfigValidationAndCredentialPairs();
         testExternalCredentialClearIsDurable();
         testLogoutTombstoneBlocksStaleExternalCredentials();
@@ -67,6 +68,20 @@ public final class RetroAchievementsConfigTest {
             check(credentials.token && "player".equals(credentials.username)
                             && "selected-token".equals(credentials.secret),
                     "external token and username pair must win");
+        } finally {
+            file.delete();
+        }
+    }
+
+    private static void testDefaultConfigEnablesCasualMode() throws Exception {
+        File file = File.createTempFile("ra-default-", ".ini");
+        try {
+            file.delete();
+            RetroAchievementsConfig.createDefaultIfMissing(file);
+            RetroAchievementsConfig config = RetroAchievementsConfig.load(file);
+            check(config.enabled, "default RA config must be enabled");
+            check(config.mode == RetroAchievementsConfig.Mode.CASUAL,
+                    "default RA config must use Casual mode");
         } finally {
             file.delete();
         }

@@ -98,8 +98,8 @@ final class RetroAchievementsConfig {
         }
         try (Writer writer = new OutputStreamWriter(new FileOutputStream(file), "UTF-8")) {
             writer.write("# Optional RetroAchievements settings\n");
-            writer.write("Enabled = false\n");
-            writer.write("Mode = Spectator\n");
+            writer.write("Enabled = true\n");
+            writer.write("Mode = Casual\n");
             writer.write("ClientName = " + DEFAULT_CLIENT_NAME + "\n");
             writer.write("ClientVersion = " + DEFAULT_CLIENT_VERSION + "\n");
         }
