@@ -1,17 +1,18 @@
 # RetroAchievements Validation Report
 
-Date: July 25, 2026
+Date: August 15, 2026
 
-Casual unlock follow-up: July 26, 2026
+Verification-removal follow-up: August 15, 2026
 
 ## Scope
 
-This draft integrates private RetroAchievements support into the Android port
-without changing the default experience for users who do not provide a private
-configuration file.
+This draft integrates private RetroAchievements support into the Android port.
+The local canonical-ROM ownership check has been removed: the ROM is still
+read once on the device to build the port assets, but it is not verified,
+stored, or required as a RetroAchievements gate.
 
 - Branch: `feature/retroachievements-private`
-- Tested source commit: `918be4e7d518c68b3e2c5b6901ef077ff6698188`
+- Current source commit: `40c9728`
 - Base commit: `6fb832027a6e9b4812244e90dcc039303bd9e15b`
 - Base branch: `samyost1/zelda3-android:dual-screen`
 - rcheevos: official `12.4.0` snapshot at
@@ -23,19 +24,26 @@ both clocks were one day ahead. The actual validation date is July 25, 2026.
 
 ## Implemented
 
-- Exact canonical US ROM verification before RetroAchievements is enabled.
+- RetroAchievements does not depend on a local canonical-ROM verification.
+- The native client still requests game 355 with hash
+  `608c22b8ff930c62dc2de54bcd6eba72` to select the correct RA achievement
+  set; this is set identity, not local ROM ownership verification.
 - Private INI configuration with token login and password-login fallback.
 - Token persistence in the app-private data directory with restrictive file
   permissions.
-- Spectator mode by default; hardcore is always disabled.
+- Casual mode is enabled by default when credentials are available; hardcore is
+  always disabled.
 - Native rcheevos client lifecycle, SNES memory mapping, logical-frame
   processing, and asynchronous HTTPS request handling.
 - Pause/resume handling, disconnect/reconnect plumbing, and logout cleanup.
 - RetroAchievements progress embedded in save states with version and checksum
   validation while preserving legacy save-state compatibility.
 - Casual-mode integrity guards that reject replay/direct-cheat paths.
+- Session-only cheats remain available without shutting down the RA client;
+  hardcore stays disabled when cheats are used.
 - Dual-screen companion panel with connection state, rich presence,
-  achievements, scrolling, verification, and logout controls.
+  achievements, scrolling, and logout controls. The old verification control
+  and `NO VERIFIED GAME` status are gone.
 - Debug-only `RA_TEST` and `RA_DUMP` broadcasts for deterministic validation.
   Their action strings and diagnostic method are absent from the release APK.
 - Existing Android ABI declarations remain
@@ -43,49 +51,50 @@ both clocks were one day ahead. The actual validation date is July 25, 2026.
 
 ## Automated Validation
 
-The final clean build used:
+The current cleanup build used:
 
 ```sh
-export JAVA_HOME=/opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home
-./gradlew clean :app:check :app:assembleDebug :app:assembleRelease \
-  -Pandroid.injected.build.abi=arm64-v8a \
-  --console=plain
+./gradlew :app:assembleDebug --no-daemon
 ```
 
-Result: `BUILD SUCCESSFUL` in 1 minute 6 seconds, with 90 actionable tasks.
+The native build used the locally installed working NDK 23.2. After the build,
+`local.properties` was restored to the normal NDK 25.2 setting.
 
 - RetroAchievements JVM tests: 3 passed.
-- Native/static assertions: 16 passed.
-- Android debug unit tests: passed.
-- Android release unit tests: passed.
-- Android lint/check: passed.
+- Native/static assertions: passed.
 - Debug APK assembled successfully.
-- Unsigned release APK assembled successfully.
 - `git diff --check`: clean.
 
 Final artifacts:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `app/build/outputs/apk/debug/app-debug.apk` | `d829b70632c8ef2680de1cbe66da0e5abaecae8e3435e490230cb347870b157e` |
-| `app/build/outputs/apk/release/app-release-unsigned.apk` | `71864a8ad44603909b57cfad526478875aaf17a4abbbb8ee6146dd6d1afe0a7e` |
+| `app/build/outputs/apk/debug/app-debug.apk` | `1cdc59f2b94170649f732670c651ac13c5107ade87889dd2692e9399531965c2` |
 
-The final release APK was scanned for `RA_TEST`, `RA_DUMP`, and
+The earlier release APK was scanned for `RA_TEST`, `RA_DUMP`, and
 `uiModelDiagnostics`; no matches were found.
 
 ## Physical Device Validation
 
-The final debug APK was installed on the AYN Thor with:
+The current `40c9728` APK was not installed during this follow-up. At the
+final deployment attempt, `adb devices -l` returned no devices and
+`adb mdns services` returned no Wi-Fi ADB service. No gameplay or runtime test
+was performed, as requested.
+
+The detailed runtime evidence below belongs to the earlier installed build and
+is retained as historical context; it does not certify the current APK.
+
+The previous debug APK was installed on the AYN Thor with:
 
 ```sh
 adb -s 6b0af897 install -r -t \
   app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Installation succeeded. The `-t` flag is required because this project's debug
+That installation succeeded. The `-t` flag is required because this project's debug
 APK is marked test-only; plain `adb install -r` is rejected by Android.
 
-After a force-stop and fresh launch of the final APK, the debug snapshot
+After a force-stop and fresh launch of that previous build, the debug snapshot
 reported:
 
 ```text
@@ -114,7 +123,7 @@ Additional physical checks:
 
 | Check | Result |
 | --- | --- |
-| Canonical ROM hash and game identification | Passed: game 355, SNES console 3 |
+| RA game-set identity | Passed: game 355, SNES console 3 |
 | Private token authentication | Passed |
 | Spectator mode and hardcore disabled | Passed |
 | Rich Presence | Passed |
@@ -129,7 +138,7 @@ Additional physical checks:
 | Turbo frame processing | Passed: 2993 logical frames in approximately 3.8 seconds |
 | Save-state progress footer | Passed: `ZRAP` footer present in the generated save |
 | Save-state restore | Passed: runtime logged `progress restore=ok` |
-| Setup re-verification through `onNewIntent` | Passed: current activity reauthenticated game 355 |
+| Setup refresh path | Passed in the previous build; the current build has no verification-only setup action |
 | Natural Casual achievement unlock | Passed: `Fighter` (ID 944) triggered and was confirmed by the server |
 | Wi-Fi disable/enable recovery | Partially observed; see limitations |
 
@@ -176,18 +185,22 @@ No memory patch, replay, synthetic unlock, or direct award request was used.
   `arm64-v8a`. Source-level ABI declarations still preserve all four upstream
   ABIs; a complete multi-ABI release build requires a compatible Intel/Linux
   Android build host.
-- The release APK is unsigned.
+- The current follow-up rebuilt the debug APK only; the release APK was not rebuilt.
 - Incremental builds inside the macOS synchronized Documents tree can create
   duplicate generated `* 2.class` files. A clean build is reliable and was used
   for all final artifacts.
 - The NDK emits non-fatal `fcntl(): Bad file descriptor` messages and a
   deprecation warning for `ndk.dir`. The debug build also retains the existing
   unoptimized Opus warning. None caused a failed task.
+- The port still needs a compatible ROM once to build `zelda3_assets.dat`.
+  That asset-source requirement is separate from the removed
+  RetroAchievements verification gate.
 
 ## Conclusion
 
-The private Spectator-mode integration is buildable, authenticated, ROM-bound,
-frame-active, save-state-aware, and usable on both physical displays of the
-AYN Thor. Automated checks, the Spectator runtime path, and one natural Casual
-unlock pass. The PR remains a draft because an active-request network reconnect
-should still be observed before merge.
+The private RetroAchievements integration now builds without a local ROM
+verification gate, defaults to Casual mode, and keeps the cheat path compatible
+with achievements. The current debug APK is built and the draft PR is updated.
+Installation of this exact APK on the Thor remains pending because ADB was not
+connected at the end of the run; runtime claims for this build are therefore
+intentionally not made.
