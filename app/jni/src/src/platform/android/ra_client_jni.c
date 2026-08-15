@@ -38,7 +38,7 @@ static jstring JniNewStringFromUtf8(JNIEnv *env, const char *value) {
 
 JNIEXPORT void JNICALL
 Java_com_dishii_zelda3_RetroAchievementsBridge_nativeConfigure(
-    JNIEnv *env, jclass clazz, jboolean enabled, jboolean spectator, jboolean verified,
+    JNIEnv *env, jclass clazz, jboolean enabled, jboolean spectator,
     jstring client_name, jstring client_version, jstring username, jstring secret,
     jboolean secret_is_token, jstring android_release, jstring android_model) {
   const char *native_client_name = JniGetString(env, client_name);
@@ -50,7 +50,6 @@ Java_com_dishii_zelda3_RetroAchievementsBridge_nativeConfigure(
 
   (void)clazz;
   RaClientZelda3_QueueConfigure(enabled == JNI_TRUE, spectator == JNI_TRUE,
-                                verified == JNI_TRUE,
                                 native_client_name, native_client_version,
                                 native_username, native_secret,
                                 secret_is_token == JNI_TRUE,

@@ -8,6 +8,8 @@ jni="$root/app/jni/src/src/platform/android/ra_client_jni.c"
 client="$root/app/jni/src/src/ra_client_zelda3.c"
 header="$root/app/jni/src/src/ra_client_zelda3.h"
 second_screen="$root/app/jni/src/src/second_screen.c"
+bridge="$root/app/src/main/java/com/dishii/zelda3/RetroAchievementsBridge.java"
+minimap="$root/app/src/main/java/com/dishii/zelda3/MinimapView.java"
 state="$root/app/jni/src/src/ra_state.c"
 state_test="$root/app/jni/src/tests/ra_state_test.c"
 
@@ -46,6 +48,10 @@ grep -Fq "writer.buffer[record_start] = '\\0';" "$client"
 grep -Fq "RaClientZelda3_AppendUiChar(&writer, 'M')" "$client"
 grep -Fq "RaClientZelda3_AppendUiChar(&writer, 'A')" "$client"
 grep -q 'JniNewStringFromUtf8' "$jni"
+grep -q 'boolean enabled = config.enabled' "$bridge"
+! grep -q 'verified && config.enabled' "$bridge"
+! grep -Eq 'VERIFY ROM|NO VERIFIED GAME|VERIFY THE ORIGINAL US ROM' "$minimap"
+! grep -q 'g_config.verified' "$client"
 
 # Cheat game-thread action invariants.
 awk '

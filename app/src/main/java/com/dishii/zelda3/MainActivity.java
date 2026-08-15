@@ -341,9 +341,7 @@ public class MainActivity extends SDLActivity {
         RetroAchievementsStorage storage = new RetroAchievementsStorage(this);
         try {
             RetroAchievementsConfig config = RetroAchievementsConfig.load(configFile);
-            boolean verified = RomVerification.CANONICAL_US_MD5.equals(
-                    storage.getVerifiedRomHash());
-            RetroAchievementsBridge.configure(this, configFile, config, storage, verified);
+            RetroAchievementsBridge.configure(this, configFile, config, storage);
         } catch (IOException e) {
             Log.w("Zelda3RA", "RetroAchievements config unavailable");
         }

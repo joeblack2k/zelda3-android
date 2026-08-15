@@ -148,7 +148,7 @@ public class MinimapView extends View {
     // touch regions (recomputed during draw)
     private final RectF tabItemsR = new RectF(), tabGearR = new RectF(), tabMapR = new RectF();
     private final RectF tabSettingsR = new RectF(), remapBackR = new RectF();
-    private final RectF raBackR = new RectF(), raLogoutR = new RectF(), raVerifyR = new RectF();
+    private final RectF raBackR = new RectF(), raLogoutR = new RectF();
     private final RectF cheatsBackR = new RectF(), cheatsHealthR = new RectF();
     private final RectF cheatsRupeesR = new RectF(), cheatsBombsR = new RectF();
     private final RectF[] settingsRowR = new RectF[14 + FEAT_MASKS.length];
@@ -1231,9 +1231,6 @@ public class MinimapView extends View {
         drawRaAction(c, raBackR, "BACK", false);
         raLogoutR.set(r.right - 150 * u, r.top + 12 * u, r.right - 18 * u, r.top + 50 * u);
         drawRaAction(c, raLogoutR, "LOG OUT", !"disabled".equals(model.mode));
-        raVerifyR.set(r.right - 292 * u, r.top + 12 * u, r.right - 158 * u, r.top + 50 * u);
-        if ("unverified".equals(model.status)) drawRaAction(c, raVerifyR, "VERIFY ROM", true);
-        else raVerifyR.setEmpty();
         drawText(c, "RETROACHIEVEMENTS",
                 r.centerX() - textWidth("RETROACHIEVEMENTS", 3 * u) / 2, r.top + 60 * u, 3 * u);
 
@@ -1241,7 +1238,7 @@ public class MinimapView extends View {
         String status = raStatus(model);
         drawText(c, fitText(mode + "  " + status, r.width() - 260 * u, 2.2f * u),
                 r.left + 24 * u, r.top + 94 * u, 2.2f * u);
-        String game = model.gameTitle.length() == 0 ? "NO VERIFIED GAME" :
+        String game = model.gameTitle.length() == 0 ? "NO GAME LOADED" :
                 raText(model.gameTitle) + "  #" + model.gameId;
         drawText(c, fitText(game, r.width() - 48 * u, 2.6f * u),
                 r.left + 24 * u, r.top + 126 * u, 2.6f * u);
@@ -1314,7 +1311,7 @@ public class MinimapView extends View {
         }
         c.restore();
         if (model.achievements.isEmpty()) {
-            drawText(c, "ACHIEVEMENTS WILL APPEAR AFTER THE VERIFIED GAME LOADS.",
+            drawText(c, "ACHIEVEMENTS WILL APPEAR AFTER THE GAME LOADS.",
                     r.left + 24 * u, raListTop + 18 * u, 1.9f * u);
         }
     }
@@ -1354,7 +1351,6 @@ public class MinimapView extends View {
     }
 
     private String raStatus(RetroAchievementsUiModel model) {
-        if ("unverified".equals(model.status)) return "VERIFY THE ORIGINAL US ROM";
         if ("disabled".equals(model.status)) return "DISABLED OR NOT CONFIGURED";
         if ("disconnected".equals(model.status)) return "OFFLINE - RETRYING";
         if ("error".equals(model.status)) return "CHECK CONNECTION AND CREDENTIALS";
@@ -1379,17 +1375,6 @@ public class MinimapView extends View {
         int end = text.length();
         while (end > 0 && textWidth(text.substring(0, end) + suffix, size) > maxWidth) end--;
         return end == 0 ? suffix : text.substring(0, end) + suffix;
-    }
-
-    private void launchRaVerification() {
-        Intent intent = new Intent(getContext(), SetupActivity.class)
-                .setAction(SetupActivity.ACTION_VERIFY_RETROACHIEVEMENTS);
-        if (!(getContext() instanceof android.app.Activity)) {
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        }
-        try {
-            getContext().startActivity(intent);
-        } catch (RuntimeException ignored) {}
     }
 
     private void drawRemapPanel(Canvas c, RectF r) {
@@ -2323,10 +2308,6 @@ public class MinimapView extends View {
                 }
             } else if (raMode) {
                 if (raBackR.contains(x, y)) { leaveSubPanel(); return true; }
-                if (!raVerifyR.isEmpty() && raVerifyR.contains(x, y)) {
-                    launchRaVerification();
-                    return true;
-                }
                 if (raLogoutR.contains(x, y) && raModel != null
                         && !"disabled".equals(raModel.mode)) {
                     RetroAchievementsBridge.logout(getContext());

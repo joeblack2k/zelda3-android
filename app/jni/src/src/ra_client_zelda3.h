@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-void RaClientZelda3_QueueConfigure(int enabled, int spectator, int verified,
+void RaClientZelda3_QueueConfigure(int enabled, int spectator,
                                    const char *client_name,
                                    const char *client_version,
                                    const char *username, const char *secret,

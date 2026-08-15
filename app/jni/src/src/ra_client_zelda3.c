@@ -27,7 +27,6 @@ typedef struct RaClientZelda3Config {
   int enabled;
   int spectator;
   int secret_is_token;
-  int verified;
   char client_name[65];
   char client_version[33];
   char username[128];
@@ -89,7 +88,7 @@ static void RaClientZelda3_ClearConfig(RaClientZelda3Config *config) {
 }
 
 static void RaClientZelda3_CopyConfig(RaClientZelda3Config *config, int enabled,
-                                      int spectator, int verified,
+                                      int spectator,
                                       const char *client_name,
                                       const char *client_version,
                                       const char *username, const char *secret,
@@ -99,7 +98,6 @@ static void RaClientZelda3_CopyConfig(RaClientZelda3Config *config, int enabled,
   SDL_memset(config, 0, sizeof(*config));
   config->enabled = enabled && username && username[0] && secret && secret[0];
   config->spectator = spectator != 0;
-  config->verified = verified != 0;
   config->secret_is_token = secret_is_token != 0;
   SDL_strlcpy(config->client_name,
               client_name && client_name[0] ? client_name : "Zelda3AndroidRA",
@@ -454,9 +452,7 @@ static void RaClientZelda3_UpdateUiModel(void) {
   g_ui_build[0] = '\0';
   if (g_config.enabled)
     mode = g_config.spectator ? "spectator" : "casual";
-  if (!g_config.verified)
-    status = "unverified";
-  else if (!g_config.enabled)
+  if (!g_config.enabled)
     status = "disabled";
   else if (g_disconnected)
     status = "disconnected";
@@ -610,7 +606,7 @@ static void RaClientZelda3_UpdateSnapshot(void) {
     RaClientZelda3_UpdateUiModel();
 }
 
-void RaClientZelda3_QueueConfigure(int enabled, int spectator, int verified,
+void RaClientZelda3_QueueConfigure(int enabled, int spectator,
                                    const char *client_name,
                                    const char *client_version,
                                    const char *username, const char *secret,
@@ -620,7 +616,7 @@ void RaClientZelda3_QueueConfigure(int enabled, int spectator, int verified,
   if (!RaClientZelda3_EnsureCommandMutex())
     return;
   SDL_LockMutex(g_command_mutex);
-  RaClientZelda3_CopyConfig(&g_commands.config, enabled, spectator, verified,
+  RaClientZelda3_CopyConfig(&g_commands.config, enabled, spectator,
                             client_name,
                             client_version, username, secret, secret_is_token,
                             android_release, android_model);

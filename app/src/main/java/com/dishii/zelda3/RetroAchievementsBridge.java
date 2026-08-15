@@ -15,16 +15,16 @@ final class RetroAchievementsBridge {
     private RetroAchievementsBridge() {}
 
     static void configure(Context context, File configFile, RetroAchievementsConfig config,
-            RetroAchievementsStorage storage, boolean verified) {
+            RetroAchievementsStorage storage) {
         applicationContext = context.getApplicationContext();
         externalConfigFile = configFile;
-        boolean enabled = verified && config.enabled
+        boolean enabled = config.enabled
                 && config.mode != RetroAchievementsConfig.Mode.DISABLED;
         RetroAchievementsConfig.Credentials credentials = enabled
                 ? config.resolveCredentials(storage.getUsername(), storage.getReturnedToken(),
                         !storage.isLoggedOut())
                 : null;
-        nativeConfigure(enabled, config.mode == RetroAchievementsConfig.Mode.SPECTATOR, verified,
+        nativeConfigure(enabled, config.mode == RetroAchievementsConfig.Mode.SPECTATOR,
                 config.clientName, config.clientVersion,
                 credentials == null ? null : credentials.username,
                 credentials == null ? null : credentials.secret,
@@ -78,7 +78,7 @@ final class RetroAchievementsBridge {
         }
     }
 
-    private static native void nativeConfigure(boolean enabled, boolean spectator, boolean verified,
+    private static native void nativeConfigure(boolean enabled, boolean spectator,
             String clientName, String clientVersion, String username, String secret,
             boolean secretIsToken, String androidRelease, String androidModel);
     private static native void nativeLogout();
